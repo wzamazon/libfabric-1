@@ -462,8 +462,8 @@ err_free_nic:
 
 static int efa_get_device_attrs(struct efa_context *ctx, struct fi_info *info)
 {
-	struct efadv_device_attr efadv_attr;
-	struct efa_device_attr device_attr;
+	struct efadv_device_attr efadv_attr = {0};
+	struct efa_device_attr device_attr = {0};
 	struct ibv_device_attr *base_attr;
 	struct ibv_port_attr port_attr;
 	int ret;
@@ -475,13 +475,17 @@ static int efa_get_device_attrs(struct efa_context *ctx, struct fi_info *info)
 		return ret;
 	}
 
-	ret = -efadv_query_device(ctx->ibv_ctx, &efadv_attr, sizeof(efadv_attr));
+	ret = -efadv_query_device(ctx->ibv_ctx, (struct efadv_device_attr *)&efadv_attr,
+				  sizeof(struct efadv_device_attr));
 	if (ret) {
 		EFA_INFO_ERRNO(FI_LOG_FABRIC, "efadv_query_device", ret);
 		return ret;
 	}
 
 	ctx->inline_buf_size = efadv_attr.inline_buf_size;
+	ctx->max_wr_rdma_sge = base_attr->max_sge_rd;
+	ctx->max_rdma_size = efadv_attr.max_rdma_size;
+	ctx->device_caps = efadv_attr.device_caps;
 
 	ctx->max_mr_size			= base_attr->max_mr_size;
 	info->domain_attr->cq_cnt		= base_attr->max_cq;
