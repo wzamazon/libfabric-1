@@ -254,7 +254,6 @@ int rxr_rdma_init_read_iov(struct rxr_ep *ep,
 		}
 	} else if (peer->is_local) {
 		for (i=0; i < tx_entry->iov_count; ++i) {
-			assert(tx_entry->mr[i]);
 			read_iov[i].addr = (uint64_t)tx_entry->iov[i].iov_base;
 			read_iov[i].len = tx_entry->iov[i].iov_len;
 			read_iov[i].key = 0;

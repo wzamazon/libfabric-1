@@ -126,7 +126,7 @@ ssize_t rxr_msg_generic_send(struct fid_ep *ep, const struct fi_msg *msg,
 		} else if (!efa_support_rdma_read(rxr_ep->rdm_ep) ||
 			   tx_entry->total_len <= rxr_env.efa_max_long_msg_size) {
 			err = rxr_pkt_post_ctrl_or_queue(rxr_ep, RXR_TX_ENTRY, tx_entry,
-						 long_pkt_type, 0);
+							 long_pkt_type, 0);
 		} else {
 			err = rxr_pkt_post_ctrl_or_queue(rxr_ep, RXR_TX_ENTRY, tx_entry,
 							 read_pkt_type, 0);
