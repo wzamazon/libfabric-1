@@ -370,6 +370,10 @@ int rxr_get_lower_rdm_info(uint32_t version, const char *node,
 	struct fi_info *core_hints = NULL;
 	int ret;
 
+	if (util_hints && util_hints->domain_attr)
+		if (!(util_hints->domain_attr->mr_mode & FI_MR_HMEM))
+			rxr_util_prov.info->domain_attr->mr_mode &= ~FI_MR_HMEM;
+
 	ret = ofi_prov_check_info(&rxr_util_prov, version, util_hints);
 	if (ret)
 		return ret;
