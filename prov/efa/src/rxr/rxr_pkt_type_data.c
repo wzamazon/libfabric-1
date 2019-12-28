@@ -201,6 +201,7 @@ ssize_t rxr_pkt_send_data_mr_cache(struct rxr_ep *ep,
 	}
 	data_pkt->hdr.seg_size = (uint16_t)payload_size;
 	pkt_entry->pkt_size = payload_size + RXR_DATA_HDR_SIZE;
+	pkt_entry->x_entry = tx_entry;
 	pkt_entry->addr = tx_entry->addr;
 
 	FI_DBG(&rxr_prov, FI_LOG_EP_DATA,
@@ -215,6 +216,19 @@ ssize_t rxr_pkt_send_data_mr_cache(struct rxr_ep *ep,
 /*
  *  rxr_pkt_handle_data_recv() and related functions
  */
+
+void rxr_pkt_handle_data_send_completion(struct rxr_ep *ep,
+					 struct rxr_pkt_entry *pkt_entry)
+{
+	struct rxr_tx_entry *tx_entry;
+
+	tx_entry = (struct rxr_tx_entry *)pkt_entry->x_entry;
+	tx_entry->bytes_acked +=
+		rxr_get_data_pkt(pkt_entry->pkt)->hdr.seg_size;
+	if (tx_entry->total_len == tx_entry->bytes_acked)
+		rxr_cq_handle_tx_completion(ep, tx_entry);
+}
+
 int rxr_pkt_handle_data(struct rxr_ep *ep,
 			struct rxr_rx_entry *rx_entry,
 			struct rxr_pkt_entry *pkt_entry,

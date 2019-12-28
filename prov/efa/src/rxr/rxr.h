@@ -899,6 +899,9 @@ void rxr_cq_handle_rx_completion(struct rxr_ep *ep,
 void rxr_cq_write_tx_completion(struct rxr_ep *ep,
 				struct rxr_tx_entry *tx_entry);
 
+void rxr_cq_handle_tx_completion(struct rxr_ep *ep,
+				 struct rxr_tx_entry *tx_entry);
+
 void rxr_cq_handle_shm_rma_write_data(struct rxr_ep *ep,
 				      struct fi_cq_data_entry *shm_comp,
 				      fi_addr_t src_addr);
