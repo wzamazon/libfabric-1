@@ -40,15 +40,15 @@
 static
 ssize_t efa_rma_post_read(struct efa_ep *ep, const struct fi_msg_rma *msg, uint64_t flags)
 {
+	struct ibv_mr *ibv_mr;
 	struct efa_qp *qp = ep->qp;
 	struct efa_conn *conn;
-	int lkey;
 
 	assert(msg->iov_count == 1);
 	assert(msg->rma_iov_count == 1);
 	assert(ep->domain->ctx->max_wr_rdma_sge >= 1);
 	/* caller must provide desc because efa claim FI_MR_LOCAL */
-	assert(msg->desc);
+	assert(msg->desc && msg->desc[0]);
 
 	assert(msg->msg_iov[0].iov_len <= ep->domain->ctx->max_rdma_size);
 
@@ -56,8 +56,8 @@ ssize_t efa_rma_post_read(struct efa_ep *ep, const struct fi_msg_rma *msg, uint6
 	qp->ibv_qp_ex->wr_id = (uintptr_t)msg->context;
 	ibv_wr_rdma_read(qp->ibv_qp_ex, msg->rma_iov[0].key, msg->rma_iov[0].addr);
 
-	lkey = (uint32_t)(uintptr_t)msg->desc[0];
-	ibv_wr_set_sge(qp->ibv_qp_ex, lkey, (uint64_t)msg->msg_iov[0].iov_base, msg->msg_iov[0].iov_len);
+	ibv_mr = (struct ibv_mr *)msg->desc[0];
+	ibv_wr_set_sge(qp->ibv_qp_ex, ibv_mr->lkey, (uint64_t)msg->msg_iov[0].iov_base, msg->msg_iov[0].iov_len);
 	conn = ep->av->addr_to_conn(ep->av, msg->addr);
 	ibv_wr_set_ud_addr(qp->ibv_qp_ex, conn->ah.ibv_ah, conn->ep_addr.qpn, EFA_QKEY);
 	return ibv_wr_complete(qp->ibv_qp_ex);
