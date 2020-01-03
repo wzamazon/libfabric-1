@@ -396,33 +396,6 @@ char *rxr_pkt_read_rts_rma_hdr(struct rxr_ep *ep,
 	return rma_hdr + rts_hdr->rma_iov_count * sizeof(struct fi_rma_iov);
 }
 
-static
-int rxr_cq_match_recv(struct dlist_entry *item, const void *arg)
-{
-	const struct rxr_pkt_entry *pkt_entry = arg;
-	struct rxr_rx_entry *rx_entry;
-
-	rx_entry = container_of(item, struct rxr_rx_entry, entry);
-
-	return rxr_match_addr(rx_entry->addr, pkt_entry->addr);
-}
-
-static
-int rxr_cq_match_trecv(struct dlist_entry *item, const void *arg)
-{
-	struct rxr_pkt_entry *pkt_entry = (struct rxr_pkt_entry *)arg;
-	struct rxr_rx_entry *rx_entry;
-	uint64_t match_tag;
-
-	rx_entry = container_of(item, struct rxr_rx_entry, entry);
-
-	match_tag = rxr_get_rts_hdr(pkt_entry->pkt)->tag;
-
-	return rxr_match_addr(rx_entry->addr, pkt_entry->addr) &&
-	       rxr_match_tag(rx_entry->cq_entry.tag, rx_entry->ignore,
-			     match_tag);
-}
-
 int rxr_cq_handle_rts_with_data(struct rxr_ep *ep,
 				struct rxr_rx_entry *rx_entry,
 				struct rxr_pkt_entry *pkt_entry,
@@ -444,9 +417,10 @@ int rxr_cq_handle_rts_with_data(struct rxr_ep *ep,
 				       0, data, data_size);
 
 	if (OFI_UNLIKELY(bytes_copied < data_size)) {
+		fprintf(stderr, "bytes_copied: %ld data_size: %ld tx_entry->total_len: %ld rx_total_iov_len: %ld\n", bytes_copied, data_size, rx_entry->total_len, ofi_total_iov_len(rx_entry->iov, rx_entry->iov_count));
 		/* recv buffer is not big enough to hold rts, this must be a truncated message */
 		assert(bytes_copied == rx_entry->cq_entry.len &&
-		       rx_entry->cq_entry.len < rx_entry->total_len);
+		       rx_entry->cq_entry.len <= rx_entry->total_len);
 		rx_entry->bytes_done = bytes_copied;
 		bytes_left = 0;
 	} else {
@@ -557,6 +531,34 @@ ssize_t rxr_pkt_proc_matched_msg_rts(struct rxr_ep *ep,
 }
 
 static
+int rxr_cq_match_recv(struct dlist_entry *item, const void *arg)
+{
+	const struct rxr_pkt_entry *pkt_entry = arg;
+	struct rxr_rx_entry *rx_entry;
+
+	rx_entry = container_of(item, struct rxr_rx_entry, entry);
+
+	return rxr_match_addr(rx_entry->addr, pkt_entry->addr);
+}
+
+static
+int rxr_cq_match_trecv(struct dlist_entry *item, const void *arg)
+{
+	struct rxr_pkt_entry *pkt_entry = (struct rxr_pkt_entry *)arg;
+	struct rxr_rx_entry *rx_entry;
+	uint64_t match_tag;
+
+	rx_entry = container_of(item, struct rxr_rx_entry, entry);
+
+	match_tag = rxr_get_rts_hdr(pkt_entry->pkt)->tag;
+
+	return rxr_match_addr(rx_entry->addr, pkt_entry->addr) &&
+	       rxr_match_tag(rx_entry->cq_entry.tag, rx_entry->ignore,
+			     match_tag);
+}
+
+
+static
 int rxr_pkt_proc_msg_rts(struct rxr_ep *ep,
 			 struct rxr_pkt_entry *pkt_entry)
 {
@@ -577,18 +579,18 @@ int rxr_pkt_proc_msg_rts(struct rxr_ep *ep,
 	}
 
 	if (OFI_UNLIKELY(!match)) {
-		rx_entry = rxr_ep_get_new_unexp_rx_entry(ep, pkt_entry);
+		rx_entry = rxr_ep_alloc_unexp_rx_entry_for_rts(ep, pkt_entry);
 		if (!rx_entry) {
 			FI_WARN(&rxr_prov, FI_LOG_CQ,
 				"RX entries exhausted.\n");
 			efa_eq_write_error(&ep->util_ep, FI_ENOBUFS, -FI_ENOBUFS);
 			return -FI_ENOBUFS;
 		}
-
+		
 		/* we are not releasing pkt_entry here because it will be
 		 * processed later
 		 */
-		pkt_entry = rx_entry->unexp_rts_pkt;
+		pkt_entry = rx_entry->unexp_pkt;
 		rts_hdr = rxr_get_rts_hdr(pkt_entry->pkt);
 		rxr_pkt_read_rts_base_hdr(ep, rx_entry, pkt_entry);
 		return 0;
