@@ -255,7 +255,7 @@ struct rxr_rx_entry *rxr_ep_split_rx_entry(struct rxr_ep *ep,
 					   struct rxr_pkt_entry *pkt_entry)
 {
 	struct rxr_rx_entry *rx_entry;
-	size_t buf_len, consumed_len, data_len=0;
+	size_t buf_len, consumed_len, data_len = 0;
 	uint64_t tag;
 	struct rxr_base_hdr *base_hdr;
 
