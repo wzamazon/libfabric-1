@@ -595,8 +595,6 @@ void rxr_cq_proc_pending_items_in_recvwin(struct rxr_ep *ep,
 					  struct rxr_peer *peer)
 {
 	struct rxr_pkt_entry *pending_pkt;
-	struct rxr_rts_hdr *rts_hdr;
-	struct rxr_base_hdr *base_hdr;
 	int ret = 0;
 	uint32_t msg_id;
 
@@ -605,21 +603,11 @@ void rxr_cq_proc_pending_items_in_recvwin(struct rxr_ep *ep,
 		if (!pending_pkt || !pending_pkt->pkt)
 			return;
 
-		base_hdr = rxr_get_base_hdr(pending_pkt->pkt);
-		if (base_hdr->type == RXR_RTS_PKT) {
-			rts_hdr = rxr_get_rts_hdr(pending_pkt->pkt);
-			msg_id = rts_hdr->msg_id;
-			FI_DBG(&rxr_prov, FI_LOG_EP_CTRL,
-			       "Processing msg_id %d from robuf\n", msg_id);
-			/* rxr_pkt_proc_rts will write error cq entry if needed */
-			ret = rxr_pkt_proc_rts(ep, pending_pkt);
-		} else {
-			msg_id = rxr_pkt_msg_id(pending_pkt);
-			FI_DBG(&rxr_prov, FI_LOG_EP_CTRL,
-			       "Processing msg_id %d from robuf\n", msg_id);
-			/* rxr_pkt_proc_rts will write error cq entry if needed */
-			ret = rxr_pkt_proc_rtm_rta(ep, pending_pkt);
-		}
+		msg_id = rxr_pkt_msg_id(pending_pkt);
+		FI_DBG(&rxr_prov, FI_LOG_EP_CTRL,
+		       "Processing msg_id %d from robuf\n", msg_id);
+		/* rxr_pkt_proc_rts will write error cq entry if needed */
+		ret = rxr_pkt_proc_rtm_rta(ep, pending_pkt);
 
 		*ofi_recvwin_get_next_msg(peer->robuf) = NULL;
 
@@ -679,20 +667,10 @@ int rxr_cq_reorder_msg(struct rxr_ep *ep,
 		       struct rxr_peer *peer,
 		       struct rxr_pkt_entry *pkt_entry)
 {
-	struct rxr_base_hdr *base_hdr;
 	struct rxr_pkt_entry *ooo_entry;
 	uint32_t msg_id;
 
-	base_hdr = rxr_get_base_hdr(pkt_entry->pkt);
-	if (base_hdr->type == RXR_RTS_PKT) {
-		struct rxr_rts_hdr *rts_hdr;
-
-		rts_hdr = rxr_get_rts_hdr(pkt_entry->pkt);
-		msg_id = rts_hdr->msg_id;
-	} else {
-		assert(base_hdr->type >= RXR_REQ_PKT_BEGIN);
-		msg_id = rxr_pkt_msg_id(pkt_entry);
-	}
+	msg_id = rxr_pkt_msg_id(pkt_entry);
 	/*
 	 * TODO: Initialize peer state  at the time of AV insertion
 	 * where duplicate detection is available.

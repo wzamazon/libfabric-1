@@ -58,7 +58,7 @@
  * operability thus is strictly prohibited.
  */
 
-#define RXR_RTS_PKT		1
+#define RXR_RETIRED_RTS_PKT	1
 #define RXR_CONNACK_PKT		2
 #define RXR_CTS_PKT		3
 #define RXR_DATA_PKT		4
@@ -119,60 +119,9 @@ struct rxr_tx_entry;
 struct rxr_rx_entry;
 struct rxr_rdma_entry;
 
-/*
- *  RTS packet data structures and functions. the implementation of
- *  these functions are in rxr_pkt_type_rts.c
- */
-struct rxr_rts_hdr {
-	uint8_t type;
-	uint8_t version;
-	uint16_t flags;
-	/* end of rxr_base_hdr */
-	/* TODO: need to add msg_id -> tx_id mapping to remove tx_id */
-	uint16_t credit_request;
-	uint8_t addrlen;
-	uint8_t rma_iov_count;
-	uint32_t tx_id;
-	uint32_t msg_id;
-	uint64_t tag;
-	uint64_t data_len;
-};
-
-#if defined(static_assert) && defined(__x86_64__)
-static_assert(sizeof(struct rxr_rts_hdr) == 32, "rxr_rts_hdr check");
-#endif
-
-static inline
-struct rxr_rts_hdr *rxr_get_rts_hdr(void *pkt)
-{
-	return (struct rxr_rts_hdr *)pkt;
-}
-
-uint64_t rxr_get_rts_data_size(struct rxr_ep *ep,
-			       struct rxr_rts_hdr *rts_hdr);
-
-ssize_t rxr_pkt_init_rts(struct rxr_ep *ep,
-			 struct rxr_tx_entry *tx_entry,
-			 struct rxr_pkt_entry *pkt_entry);
-
-void rxr_pkt_handle_rts_sent(struct rxr_ep *ep, struct rxr_pkt_entry *pkt_entry);
-
-void rxr_pkt_handle_rts_send_completion(struct rxr_ep *ep,
-					struct rxr_pkt_entry *pkt_entry);
-
-ssize_t rxr_pkt_post_shm_read(struct rxr_ep *ep, struct rxr_rx_entry *rx_entry);
-
-ssize_t rxr_pkt_proc_matched_msg_rts(struct rxr_ep *ep,
-				     struct rxr_rx_entry *rx_entry,
-				     struct rxr_pkt_entry *pkt_entry);
-
-ssize_t rxr_pkt_proc_rts(struct rxr_ep *ep, struct rxr_pkt_entry *pkt_entry);
-
-void rxr_pkt_handle_rts_recv(struct rxr_ep *ep, struct rxr_pkt_entry *pkt_entry);
-
-/*
- *  CONNACK packet header and functions
- *  implementation of the functions are in rxr_pkt_type_misc.c
+/* 
+ * CONNACK packet header and functions
+ * definition of the functions are in rxr_pkt_type_misc.c
  */
 struct rxr_connack_hdr {
 	uint8_t type;
