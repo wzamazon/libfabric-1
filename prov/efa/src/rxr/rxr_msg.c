@@ -57,7 +57,44 @@
 /**
  *   Utility functions used by both non-tagged and tagged send.
  */
-static
+ssize_t rxr_msg_post_medium_rtm(struct rxr_ep *ep, struct rxr_tx_entry *tx_entry)
+{
+	ssize_t err;
+	int medium_pkt_type = (tx_entry->op == ofi_op_tagged) ? RXR_MEDIUM_TAGRTM_PKT
+							      : RXR_MEDIUM_MSGRTM_PKT;
+
+	while (tx_entry->bytes_sent < tx_entry->total_len) {
+		err = rxr_pkt_post_ctrl(ep, RXR_TX_ENTRY, tx_entry, medium_pkt_type, 0);
+		if (OFI_UNLIKELY(err))
+			return err;
+	}
+
+	return 0;
+}
+
+ssize_t rxr_msg_post_medium_rtm_or_queue(struct rxr_ep *ep, struct rxr_tx_entry *tx_entry)
+{
+	ssize_t err;
+	int medium_pkt_type = (tx_entry->op == ofi_op_tagged) ? RXR_MEDIUM_TAGRTM_PKT
+							      : RXR_MEDIUM_MSGRTM_PKT;
+
+	while (tx_entry->bytes_sent < tx_entry->total_len) {
+		err = rxr_pkt_post_ctrl(ep, RXR_TX_ENTRY, tx_entry, medium_pkt_type, 0);
+		if (err == -FI_EAGAIN) {
+			tx_entry->state = RXR_TX_QUEUED_CTRL;
+			tx_entry->queued_ctrl.type = medium_pkt_type;
+			dlist_insert_tail(&tx_entry->queued_entry,
+					  &ep->tx_entry_queued_list);
+			return 0;
+		}
+
+		if (OFI_UNLIKELY(err))
+			return err;
+	}
+
+	return 0;
+}
+
 ssize_t rxr_msg_generic_send(struct fid_ep *ep, const struct fi_msg *msg,
 			     uint64_t tag, uint32_t op, uint64_t flags)
 {
@@ -101,9 +138,7 @@ ssize_t rxr_msg_generic_send(struct fid_ep *ep, const struct fi_msg *msg,
 		}
 	}
 
-	if (!(rxr_env.enable_shm_transfer && peer->is_local) &&
-	    rxr_need_sas_ordering(rxr_ep))
-		tx_entry->msg_id = peer->next_msg_id++;
+	tx_entry->msg_id = peer->next_msg_id++;
 
 	int eager_pkt_type = (op == ofi_op_tagged) ? RXR_EAGER_TAGRTM_PKT : RXR_EAGER_MSGRTM_PKT;
 	int long_pkt_type = (op == ofi_op_tagged) ? RXR_LONG_TAGRTM_PKT : RXR_LONG_MSGRTM_PKT;
@@ -112,7 +147,7 @@ ssize_t rxr_msg_generic_send(struct fid_ep *ep, const struct fi_msg *msg,
 	size_t max_pkt_data_size = rxr_pkt_req_max_data_size(rxr_ep,
 							    tx_entry->addr,
 							    RXR_EAGER_TAGRTM_PKT);
-	if(peer->is_local) {
+	if (peer->is_local) {
 		if (tx_entry->total_len <= max_pkt_data_size)
 			err = rxr_pkt_post_ctrl_or_queue(rxr_ep, RXR_TX_ENTRY, tx_entry,
 							 eager_pkt_type, 0);
@@ -123,10 +158,12 @@ ssize_t rxr_msg_generic_send(struct fid_ep *ep, const struct fi_msg *msg,
 		if (tx_entry->total_len <= max_pkt_data_size) {
 			err = rxr_pkt_post_ctrl_or_queue(rxr_ep, RXR_TX_ENTRY, tx_entry,
 							 eager_pkt_type, 0);
+		} else if (tx_entry->total_len <= rxr_env.efa_max_medium_msg_size) {
+			err = rxr_msg_post_medium_rtm_or_queue(rxr_ep, tx_entry);
 		} else if (!efa_support_rdma_read(rxr_ep->rdm_ep) ||
 			   tx_entry->total_len <= rxr_env.efa_max_long_msg_size) {
 			err = rxr_pkt_post_ctrl_or_queue(rxr_ep, RXR_TX_ENTRY, tx_entry,
-							 long_pkt_type, 0);
+						 long_pkt_type, 0);
 		} else {
 			err = rxr_pkt_post_ctrl_or_queue(rxr_ep, RXR_TX_ENTRY, tx_entry,
 							 read_pkt_type, 0);
@@ -135,9 +172,7 @@ ssize_t rxr_msg_generic_send(struct fid_ep *ep, const struct fi_msg *msg,
 
 	if (OFI_UNLIKELY(err)) {
 		rxr_release_tx_entry(rxr_ep, tx_entry);
-		if (!(rxr_env.enable_shm_transfer && peer->is_local) &&
-		    rxr_need_sas_ordering(rxr_ep))
-			peer->next_msg_id--;
+		peer->next_msg_id--;
 	}
 
 out:
@@ -451,6 +486,7 @@ int rxr_msg_handle_unexp_match(struct rxr_ep *ep,
 	rx_entry->state = RXR_RX_MATCHED;
 
 	pkt_entry = rx_entry->unexp_pkt;
+	rx_entry->unexp_pkt = NULL;
 	data_len = rxr_pkt_rtm_total_len(pkt_entry);
 
 	rx_entry->cq_entry.op_context = context;

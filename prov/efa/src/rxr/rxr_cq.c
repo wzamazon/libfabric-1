@@ -608,9 +608,7 @@ void rxr_cq_proc_pending_items_in_recvwin(struct rxr_ep *ep,
 		       "Processing msg_id %d from robuf\n", msg_id);
 		/* rxr_pkt_proc_rts will write error cq entry if needed */
 		ret = rxr_pkt_proc_rtm_rta(ep, pending_pkt);
-
 		*ofi_recvwin_get_next_msg(peer->robuf) = NULL;
-
 		if (OFI_UNLIKELY(ret)) {
 			FI_WARN(&rxr_prov, FI_LOG_CQ,
 				"Error processing msg_id %d from robuf: %s\n",
@@ -667,7 +665,7 @@ int rxr_cq_reorder_msg(struct rxr_ep *ep,
 		       struct rxr_peer *peer,
 		       struct rxr_pkt_entry *pkt_entry)
 {
-	struct rxr_pkt_entry *ooo_entry;
+	struct rxr_pkt_entry *ooo_entry, *cur_ooo_entry;
 	uint32_t msg_id;
 
 	msg_id = rxr_pkt_msg_id(pkt_entry);
@@ -692,19 +690,28 @@ int rxr_cq_reorder_msg(struct rxr_ep *ep,
 
 	if (OFI_LIKELY(rxr_env.rx_copy_ooo)) {
 		assert(pkt_entry->type == RXR_PKT_ENTRY_POSTED);
-		ooo_entry = rxr_pkt_entry_alloc(ep, ep->rx_ooo_pkt_pool);
+		ooo_entry = rxr_pkt_entry_clone(ep, ep->rx_ooo_pkt_pool, pkt_entry, RXR_PKT_ENTRY_OOO);
 		if (OFI_UNLIKELY(!ooo_entry)) {
 			FI_WARN(&rxr_prov, FI_LOG_EP_CTRL,
 				"Unable to allocate rx_pkt_entry for OOO msg\n");
 			return -FI_ENOMEM;
 		}
-		rxr_pkt_entry_copy(ep, ooo_entry, pkt_entry, RXR_PKT_ENTRY_OOO);
 		rxr_pkt_entry_release_rx(ep, pkt_entry);
 	} else {
 		ooo_entry = pkt_entry;
 	}
 
-	ofi_recvwin_queue_msg(peer->robuf, &ooo_entry, msg_id);
+	cur_ooo_entry = *ofi_recvwin_get_msg(peer->robuf, msg_id);
+	if (cur_ooo_entry) {
+		assert(base_hdr->type == RXR_MEDIUM_MSGRTM_PKT ||
+		       base_hdr->type == RXR_MEDIUM_TAGRTM_PKT);
+
+		assert(rxr_get_base_hdr(cur_ooo_entry->pkt)->type == base_hdr->type);
+		rxr_pkt_entry_append(cur_ooo_entry, ooo_entry);
+	} else {
+		ofi_recvwin_queue_msg(peer->robuf, &ooo_entry, msg_id);
+	}
+
 	return 1;
 }
 

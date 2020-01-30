@@ -179,6 +179,12 @@ struct rxr_medium_tagrtm_hdr {
 	uint64_t tag;
 };
 
+static inline
+struct rxr_medium_rtm_base_hdr *rxr_get_medium_rtm_base_hdr(void *pkt)
+{
+	return (struct rxr_medium_rtm_base_hdr *)pkt;
+}
+
 struct rxr_long_rtm_base_hdr {
 	struct rxr_rtm_base_hdr hdr;
 	uint64_t data_len;
@@ -266,6 +272,9 @@ void rxr_pkt_handle_eager_rtm_sent(struct rxr_ep *ep,
 {
 }
 
+void rxr_pkt_handle_medium_rtm_sent(struct rxr_ep *ep,
+				    struct rxr_pkt_entry *pkt_entry);
+
 void rxr_pkt_handle_long_rtm_sent(struct rxr_ep *ep,
 				  struct rxr_pkt_entry *pkt_entry);
 
@@ -280,6 +289,9 @@ void rxr_pkt_handle_read_rtm_sent(struct rxr_ep *ep,
  */
 void rxr_pkt_handle_eager_rtm_send_completion(struct rxr_ep *ep,
 					      struct rxr_pkt_entry *pkt_entry);
+
+void rxr_pkt_handle_medium_rtm_send_completion(struct rxr_ep *ep,
+					       struct rxr_pkt_entry *pkt_entry);
 
 void rxr_pkt_handle_long_rtm_send_completion(struct rxr_ep *ep,
 					     struct rxr_pkt_entry *pkt_entry);
