@@ -69,12 +69,13 @@ struct rxr_pkt_entry *rxr_pkt_entry_alloc(struct rxr_ep *ep,
 	memset(pkt_entry->pkt, 0, ep->mtu_size);
 #endif
 	pkt_entry->state = RXR_PKT_ENTRY_IN_USE;
-
+	pkt_entry->next = NULL;
 	return pkt_entry;
 }
 
-void rxr_pkt_entry_release_tx(struct rxr_ep *ep,
-			      struct rxr_pkt_entry *pkt)
+static
+void rxr_pkt_entry_release_single_tx(struct rxr_ep *ep,
+				     struct rxr_pkt_entry *pkt)
 {
 	struct rxr_peer *peer;
 
@@ -104,8 +105,21 @@ void rxr_pkt_entry_release_tx(struct rxr_ep *ep,
 	ofi_buf_free(pkt);
 }
 
-void rxr_pkt_entry_release_rx(struct rxr_ep *ep,
+void rxr_pkt_entry_release_tx(struct rxr_ep *ep,
 			      struct rxr_pkt_entry *pkt_entry)
+{
+	struct rxr_pkt_entry *next;
+
+	while(pkt_entry) {
+		next = pkt_entry->next;
+		rxr_pkt_entry_release_single_tx(ep, pkt_entry);
+		pkt_entry = next;
+	}
+}
+
+static
+void rxr_pkt_entry_release_single_rx(struct rxr_ep *ep,
+				     struct rxr_pkt_entry *pkt_entry)
 {
 	if (pkt_entry->type == RXR_PKT_ENTRY_POSTED) {
 		struct rxr_peer *peer;
@@ -128,18 +142,29 @@ void rxr_pkt_entry_release_rx(struct rxr_ep *ep,
 	ofi_buf_free(pkt_entry);
 }
 
+void rxr_pkt_entry_release_rx(struct rxr_ep *ep,
+			      struct rxr_pkt_entry *pkt_entry)
+{
+	struct rxr_pkt_entry *next;
+
+	while(pkt_entry) {
+		next = pkt_entry->next;
+		rxr_pkt_entry_release_single_rx(ep, pkt_entry);
+		pkt_entry = next;
+	}
+}
+
+static
 void rxr_pkt_entry_copy(struct rxr_ep *ep,
 			struct rxr_pkt_entry *dest,
-			struct rxr_pkt_entry *src,
-			enum rxr_pkt_entry_type type)
+			struct rxr_pkt_entry *src)
 {
 	FI_DBG(&rxr_prov, FI_LOG_EP_CTRL,
-	       "Copying packet (type %d) out of posted buffer\n", type);
+	       "Copying packet out of posted buffer\n");
 	assert(src->type == RXR_PKT_ENTRY_POSTED);
 	memcpy(dest, src, sizeof(struct rxr_pkt_entry));
 	dest->pkt = (struct rxr_pkt *)((char *)dest + sizeof(*dest));
 	memcpy(dest->pkt, src->pkt, ep->mtu_size);
-	dest->type = type;
 	dlist_init(&dest->entry);
 #if ENABLE_DEBUG
 	dlist_init(&dest->dbg_entry);
@@ -148,8 +173,73 @@ void rxr_pkt_entry_copy(struct rxr_ep *ep,
 }
 
 /*
- *   Utility functions used to send pkt over wire
+ * Create a new rx_entry for an unexpected message. Store the packet for later
+ * processing and put the rx_entry on the appropriate unexpected list.
  */
+struct rxr_pkt_entry *rxr_pkt_get_unexp(struct rxr_ep *ep,
+					struct rxr_pkt_entry **pkt_entry_ptr)
+{
+	struct rxr_pkt_entry *unexp_pkt_entry;
+
+	if (rxr_env.rx_copy_unexp && (*pkt_entry_ptr)->type == RXR_PKT_ENTRY_POSTED) {
+		unexp_pkt_entry = rxr_pkt_entry_clone(ep, ep->rx_unexp_pkt_pool, *pkt_entry_ptr, RXR_PKT_ENTRY_UNEXP);
+		if (OFI_UNLIKELY(!unexp_pkt_entry)) {
+			FI_WARN(&rxr_prov, FI_LOG_EP_CTRL,
+				"Unable to allocate rx_pkt_entry for unexp msg\n");
+			return NULL;
+		}
+		rxr_pkt_entry_release_rx(ep, *pkt_entry_ptr);
+		*pkt_entry_ptr = unexp_pkt_entry;
+	} else {
+		unexp_pkt_entry = *pkt_entry_ptr;
+	}
+
+	return unexp_pkt_entry;
+}
+
+struct rxr_pkt_entry *rxr_pkt_entry_clone(struct rxr_ep *ep,
+					  struct ofi_bufpool *pkt_pool,
+					  struct rxr_pkt_entry *src,
+					  int new_entry_type)
+{
+	struct rxr_pkt_entry *root = NULL, *dst;
+
+	assert(src);
+	dst = rxr_pkt_entry_alloc(ep, pkt_pool);
+	if (!dst) {
+		return NULL;
+	}
+	
+	rxr_pkt_entry_copy(ep, dst, src);
+	dst->type = new_entry_type;
+	root = dst;
+	while (src->next) {
+		dst->next = rxr_pkt_entry_alloc(ep, pkt_pool);
+		if (!dst->next) {
+			return NULL;
+		}
+
+	       	rxr_pkt_entry_copy(ep, dst->next, src->next);
+		dst->type = new_entry_type;
+		src = src->next;
+		dst = dst->next;
+	}
+
+	assert(dst && dst->next==NULL);
+	return root;
+}
+
+void rxr_pkt_entry_append(struct rxr_pkt_entry *dst,
+			  struct rxr_pkt_entry *src)
+{
+	assert(dst);
+
+	while(dst->next)
+		dst = dst->next;
+	assert(dst && (dst->next == NULL));
+	dst->next = src;
+}
+
 static inline
 ssize_t rxr_pkt_entry_sendmsg(struct rxr_ep *ep, struct rxr_pkt_entry *pkt_entry,
 			      const struct fi_msg *msg, uint64_t flags)
@@ -241,3 +331,55 @@ ssize_t rxr_pkt_entry_inject(struct rxr_ep *ep,
 	return fi_inject(ep->shm_ep, rxr_pkt_start(pkt_entry), pkt_entry->pkt_size,
 			 peer->shm_fiaddr);
 }
+
+/*
+ * Functions for pkt_rx_map
+ */
+struct rxr_rx_entry *rxr_pkt_rx_map_lookup(struct rxr_ep *ep,
+					   struct rxr_pkt_entry *pkt_entry)
+{
+	struct rxr_pkt_rx_map *entry=NULL;
+	struct rxr_pkt_rx_key key;
+
+	key.msg_id = rxr_pkt_msg_id(pkt_entry);
+	key.addr = pkt_entry->addr;
+	HASH_FIND(hh, ep->pkt_rx_map, &key, sizeof(struct rxr_pkt_rx_key), entry);
+	return entry ? entry->rx_entry : NULL;
+}
+
+void rxr_pkt_rx_map_record(struct rxr_ep *ep,
+			   struct rxr_pkt_entry *pkt_entry,
+			   struct rxr_rx_entry *rx_entry)
+{
+	struct rxr_pkt_rx_map *entry;
+
+	entry = ofi_buf_alloc(ep->map_entry_pool);
+	if (OFI_UNLIKELY(!entry)) {
+		FI_WARN(&rxr_prov, FI_LOG_CQ,
+		"Map entries for medium size message exhausted.\n");
+		efa_eq_write_error(&ep->util_ep, FI_ENOBUFS, -FI_ENOBUFS);
+		return;
+	}
+
+	entry->key.msg_id = rxr_pkt_msg_id(pkt_entry);
+	entry->key.addr = pkt_entry->addr;
+	entry->rx_entry = rx_entry;
+	HASH_ADD(hh, ep->pkt_rx_map, key, sizeof(struct rxr_pkt_rx_key), entry);
+}
+
+void rxr_pkt_rx_map_remove(struct rxr_ep *ep,
+			   struct rxr_pkt_entry *pkt_entry,
+			   struct rxr_rx_entry *rx_entry)
+{
+	struct rxr_pkt_rx_map *entry;
+	struct rxr_pkt_rx_key key;
+
+	key.msg_id = rxr_pkt_msg_id(pkt_entry);
+	key.addr = pkt_entry->addr;
+
+	HASH_FIND(hh, ep->pkt_rx_map, &key, sizeof(key), entry);
+	assert(entry && entry->rx_entry == rx_entry);
+	HASH_DEL(ep->pkt_rx_map, entry);
+	ofi_buf_free(entry);
+}
+

@@ -593,12 +593,9 @@ int rxr_cq_reorder_msg(struct rxr_ep *ep,
 		       struct rxr_peer *peer,
 		       struct rxr_pkt_entry *pkt_entry)
 {
-	struct rxr_base_hdr *base_hdr;
-	struct rxr_pkt_entry *ooo_entry;
+	struct rxr_pkt_entry *ooo_entry, *cur_ooo_entry;
 	uint32_t msg_id;
 
-	base_hdr = rxr_get_base_hdr(pkt_entry->pkt);
-	assert(base_hdr->type >= RXR_REQ_PKT_BEGIN);
 	msg_id = rxr_pkt_msg_id(pkt_entry);
 	/*
 	 * TODO: Initialize peer state  at the time of AV insertion
@@ -621,21 +618,27 @@ int rxr_cq_reorder_msg(struct rxr_ep *ep,
 
 	if (OFI_LIKELY(rxr_env.rx_copy_ooo)) {
 		assert(pkt_entry->type == RXR_PKT_ENTRY_POSTED);
-		ooo_entry = rxr_pkt_entry_alloc(ep, ep->rx_ooo_pkt_pool);
+		ooo_entry = rxr_pkt_entry_clone(ep, ep->rx_ooo_pkt_pool, pkt_entry, RXR_PKT_ENTRY_OOO);
 		if (OFI_UNLIKELY(!ooo_entry)) {
 			FI_WARN(&rxr_prov, FI_LOG_EP_CTRL,
 				"Unable to allocate rx_pkt_entry for OOO msg\n");
 			return -FI_ENOMEM;
 		}
-		rxr_pkt_entry_copy(ep, ooo_entry, pkt_entry, RXR_PKT_ENTRY_OOO);
 		rxr_pkt_entry_release_rx(ep, pkt_entry);
-	} else {
-		ooo_entry = pkt_entry;
 	}
 
-	ofi_recvwin_queue_msg(peer->robuf, &ooo_entry, msg_id);
+	cur_ooo_entry = *ofi_recvwin_get_msg(peer->robuf, msg_id);
+	if (cur_ooo_entry) {
+		assert(rxr_get_base_hdr(cur_ooo_entry->pkt)->type == RXR_MEDIUM_MSGRTM_PKT ||
+		       rxr_get_base_hdr(cur_ooo_entry->pkt)->type == RXR_MEDIUM_TAGRTM_PKT);
+		rxr_pkt_entry_append(cur_ooo_entry, ooo_entry);
+	} else {
+		ofi_recvwin_queue_msg(peer->robuf, &ooo_entry, msg_id);
+	}
+
 	return 1;
 }
+
 
 void rxr_cq_proc_pending_items_in_recvwin(struct rxr_ep *ep,
 					  struct rxr_peer *peer)
@@ -654,9 +657,7 @@ void rxr_cq_proc_pending_items_in_recvwin(struct rxr_ep *ep,
 		       "Processing msg_id %d from robuf\n", msg_id);
 		/* rxr_pkt_proc_rtm_rta will write error cq entry if needed */
 		ret = rxr_pkt_proc_rtm_rta(ep, pending_pkt);
-
 		*ofi_recvwin_get_next_msg(peer->robuf) = NULL;
-
 		if (OFI_UNLIKELY(ret)) {
 			FI_WARN(&rxr_prov, FI_LOG_CQ,
 				"Error processing msg_id %d from robuf: %s\n",
@@ -713,6 +714,7 @@ void rxr_cq_handle_shm_completion(struct rxr_ep *ep, struct fi_cq_data_entry *cq
 		efa_cntr_report_rx_completion(&ep->util_ep, cq_entry->flags);
 	}
 }
+
 
 void rxr_cq_write_tx_completion(struct rxr_ep *ep,
 				struct rxr_tx_entry *tx_entry)
