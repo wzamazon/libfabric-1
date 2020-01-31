@@ -215,9 +215,15 @@ size_t rxr_pkt_req_copy_data(struct rxr_rx_entry *rx_entry,
 	 */
 	if (rx_entry->cq_entry.len > rx_entry->total_len)
 		rx_entry->cq_entry.len = rx_entry->total_len;
-
-	bytes_copied = ofi_copy_to_iov(rx_entry->iov, rx_entry->iov_count,
-				       0, data, data_size);
+#ifdef HAVE_CUDA
+	if (rxr_ep_is_cuda_mr((struct fid_mr*)&rx_entry->desc[0]))
+		bytes_copied = rxr_copy_to_cuda_iov(rx_entry->iov, rx_entry->iov_count,
+					            0, data, data_size);
+	else
+#else
+		bytes_copied = ofi_copy_to_iov(rx_entry->iov, rx_entry->iov_count,
+					       0, data, data_size);
+#endif
 
 	if (OFI_UNLIKELY(bytes_copied < data_size)) {
 		/* recv buffer is not big enough to hold req, this must be a truncated message */
@@ -257,8 +263,16 @@ void rxr_pkt_init_rtm(struct rxr_ep *ep,
 	rtm_hdr->msg_id = tx_entry->msg_id;
 
 	data = (char *)pkt_entry->pkt + pkt_entry->hdr_size;
-	data_size = ofi_copy_from_iov(data, ep->mtu_size - pkt_entry->hdr_size,
-				      tx_entry->iov, tx_entry->iov_count, data_offset);
+#ifdef HAVE_CUDA
+	if (rxr_ep_is_cuda_mr((struct fid_mr*)&tx_entry->desc[0]))
+		data_size = rxr_copy_from_cuda_iov(data,
+						   ep->mtu_size - pkt_entry->hdr_size,
+						   tx_entry->iov,
+						   tx_entry->iov_count, 0);
+	else
+#endif
+		data_size = ofi_copy_from_iov(data, ep->mtu_size - pkt_entry->hdr_size,
+					      tx_entry->iov, tx_entry->iov_count, data_offset);
 
 	pkt_entry->pkt_size = pkt_entry->hdr_size + data_size;
 	pkt_entry->x_entry = tx_entry;
@@ -667,7 +681,13 @@ ssize_t rxr_pkt_proc_matched_medium_rtm(struct rxr_ep *ep,
 		data = (char *)cur->pkt + cur->hdr_size;
 		offset = rxr_get_medium_rtm_base_hdr(cur->pkt)->offset;
 		data_size = cur->pkt_size - cur->hdr_size;
-		ofi_copy_to_iov(rx_entry->iov, rx_entry->iov_count, offset, data, data_size);
+#ifdef HAVE_CUDA
+		if (rxr_ep_is_cuda_mr((struct fid_mr*)&rx_entry->desc[0]))
+			rxr_copy_to_cuda_iov(rx_entry->iov, rx_entry->iov_count, offset, data, data_size);
+		else
+#endif
+			ofi_copy_to_iov(rx_entry->iov, rx_entry->iov_count, offset, data, data_size);
+
 		rx_entry->bytes_done += data_size;
 		cur = cur->next;
 	}
