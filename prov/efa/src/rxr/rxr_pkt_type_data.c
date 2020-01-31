@@ -33,6 +33,9 @@
 
 #include "rxr.h"
 #include "rxr_msg.h"
+#ifdef HAVE_CUDA
+#include "efa_cuda.h"
+#endif
 
 /*
  * This function contains data packet related functions
@@ -60,11 +63,21 @@ ssize_t rxr_pkt_send_data(struct rxr_ep *ep,
 	data_pkt = (struct rxr_data_pkt *)pkt_entry->pkt;
 	data_pkt->hdr.seg_size = payload_size;
 
-	pkt_entry->pkt_size = ofi_copy_from_iov(data_pkt->data,
-						payload_size,
-						tx_entry->iov,
-						tx_entry->iov_count,
-						tx_entry->bytes_sent);
+#ifdef HAVE_CUDA
+	if (rxr_ep_is_cuda_mr((struct fid_mr*)&tx_entry->desc[0]))
+		pkt_entry->pkt_size = rxr_copy_from_cuda_iov(data_pkt->data,
+							     payload_size,
+							     tx_entry->iov,
+							     tx_entry->iov_count,
+							     tx_entry->bytes_sent);
+       else
+#endif
+		pkt_entry->pkt_size = ofi_copy_from_iov(data_pkt->data,
+							payload_size,
+							tx_entry->iov,
+							tx_entry->iov_count,
+							tx_entry->bytes_sent);
+
 	assert(pkt_entry->pkt_size == payload_size);
 
 	pkt_entry->pkt_size += sizeof(struct rxr_data_hdr);
