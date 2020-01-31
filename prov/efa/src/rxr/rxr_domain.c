@@ -112,7 +112,8 @@ static int rxr_mr_close(fid_t fid)
 		FI_WARN(&rxr_prov, FI_LOG_MR,
 			"Unable to close MR\n");
 
-	if (rxr_env.enable_shm_transfer && rxr_mr->shm_msg_mr) {
+	if (rxr_env.enable_shm_transfer && rxr_mr->shm_msg_mr 
+	    && rxr_mr->peer.iface == FI_HMEM_SYSTEM) {
 		ret = fi_close(&rxr_mr->shm_msg_mr->fid);
 		if (ret)
 			FI_WARN(&rxr_prov, FI_LOG_MR,
