@@ -47,20 +47,20 @@
 
 struct rxr_rx_entry *rxr_ep_rx_entry_init(struct rxr_ep *ep,
 					  struct rxr_rx_entry *rx_entry,
-					  const struct iovec *iov,
-					  size_t iov_count, uint64_t tag,
-					  uint64_t ignore, void *context,
-					  fi_addr_t addr, uint32_t op,
+					  const struct fi_msg *msg,
+					  uint64_t tag,
+					  uint64_t ignore,
+					  uint32_t op,
 					  uint64_t flags)
 {
 	rx_entry->type = RXR_RX_ENTRY;
 	rx_entry->rx_id = ofi_buf_index(rx_entry);
-	rx_entry->addr = addr;
+	rx_entry->addr = msg->addr;
 	rx_entry->fi_flags = flags;
 	rx_entry->rxr_flags = 0;
 	rx_entry->bytes_done = 0;
 	rx_entry->window = 0;
-	rx_entry->iov_count = iov_count;
+	rx_entry->iov_count = msg->iov_count;
 	rx_entry->tag = tag;
 	rx_entry->op = op;
 	rx_entry->ignore = ignore;
@@ -71,13 +71,18 @@ struct rxr_rx_entry *rxr_ep_rx_entry_init(struct rxr_ep *ep,
 	memset(&rx_entry->cq_entry, 0, sizeof(rx_entry->cq_entry));
 
 	/* Handle case where we're allocating an unexpected rx_entry */
-	if (iov) {
-		memcpy(rx_entry->iov, iov, sizeof(*rx_entry->iov) * iov_count);
-		rx_entry->cq_entry.len = ofi_total_iov_len(iov, iov_count);
-		rx_entry->cq_entry.buf = iov[0].iov_base;
+	if (msg->msg_iov) {
+		memcpy(rx_entry->iov, msg->msg_iov, sizeof(*rx_entry->iov) * msg->iov_count);
+		rx_entry->cq_entry.len = ofi_total_iov_len(msg->msg_iov, msg->iov_count);
+		rx_entry->cq_entry.buf = msg->msg_iov[0].iov_base;
 	}
 
-	rx_entry->cq_entry.op_context = context;
+        if (msg->desc)
+		memcpy(&rx_entry->desc[0], msg->desc, sizeof(*msg->desc) * msg->iov_count);
+	else
+		memset(&rx_entry->desc[0], 0, sizeof(*msg->desc) * msg->iov_count);
+
+	rx_entry->cq_entry.op_context = msg->context;
 	rx_entry->cq_entry.tag = 0;
 	rx_entry->ignore = ~0;
 
@@ -113,10 +118,10 @@ struct rxr_rx_entry *rxr_ep_rx_entry_init(struct rxr_ep *ep,
 }
 
 struct rxr_rx_entry *rxr_ep_get_rx_entry(struct rxr_ep *ep,
-					 const struct iovec *iov,
-					 size_t iov_count, uint64_t tag,
-					 uint64_t ignore, void *context,
-					 fi_addr_t addr, uint32_t op,
+					 const struct fi_msg *msg,
+					 uint64_t tag,
+					 uint64_t ignore,
+					 uint32_t op,
 					 uint64_t flags)
 {
 	struct rxr_rx_entry *rx_entry;
@@ -130,8 +135,7 @@ struct rxr_rx_entry *rxr_ep_get_rx_entry(struct rxr_ep *ep,
 #if ENABLE_DEBUG
 	dlist_insert_tail(&rx_entry->rx_entry_entry, &ep->rx_entry_list);
 #endif
-	rx_entry = rxr_ep_rx_entry_init(ep, rx_entry, iov, iov_count, tag,
-					ignore, context, addr, op, flags);
+	rx_entry = rxr_ep_rx_entry_init(ep, rx_entry, msg, tag, ignore, op, flags);
 	rx_entry->state = RXR_RX_INIT;
 	rx_entry->op = op;
 	return rx_entry;
@@ -142,13 +146,14 @@ struct rxr_rx_entry *rxr_ep_alloc_unexp_rx_entry_for_msgrtm(struct rxr_ep *ep,
 {
 	struct rxr_rx_entry *rx_entry;
 	struct rxr_pkt_entry *unexp_pkt_entry;
+	struct fi_msg msg = {0};
 
 	unexp_pkt_entry = rxr_pkt_get_unexp(ep, pkt_entry_ptr);
 	if (OFI_UNLIKELY(!unexp_pkt_entry))
 		return NULL;
 
-	rx_entry = rxr_ep_get_rx_entry(ep, NULL, 0, 0, ~0, NULL,
-				       unexp_pkt_entry->addr, ofi_op_msg, 0);
+	msg.addr = unexp_pkt_entry->addr;
+	rx_entry = rxr_ep_get_rx_entry(ep, &msg, 0, ~0, ofi_op_msg, 0);
 	if (OFI_UNLIKELY(!rx_entry)) {
 		FI_WARN(&rxr_prov, FI_LOG_CQ,
 			"RX entries exhausted.\n");
@@ -170,14 +175,15 @@ struct rxr_rx_entry *rxr_ep_alloc_unexp_rx_entry_for_tagrtm(struct rxr_ep *ep,
 	uint64_t tag;
 	struct rxr_rx_entry *rx_entry;
 	struct rxr_pkt_entry *unexp_pkt_entry;
+	struct fi_msg msg = {0};
 
 	unexp_pkt_entry = rxr_pkt_get_unexp(ep, pkt_entry_ptr);
 	if (OFI_UNLIKELY(!unexp_pkt_entry))
 		return NULL;
 
 	tag = rxr_pkt_rtm_tag(unexp_pkt_entry);
-	rx_entry = rxr_ep_get_rx_entry(ep, NULL, 0, tag, ~0, NULL,
-				       unexp_pkt_entry->addr, ofi_op_tagged, 0);
+	msg.addr = unexp_pkt_entry->addr;
+	rx_entry = rxr_ep_get_rx_entry(ep, &msg, tag, ~0, ofi_op_tagged, 0);
 	if (OFI_UNLIKELY(!rx_entry))
 		return NULL;
 
@@ -198,15 +204,17 @@ struct rxr_rx_entry *rxr_ep_split_rx_entry(struct rxr_ep *ep,
 	size_t buf_len, consumed_len, data_len = 0;
 	uint64_t tag;
 	struct rxr_base_hdr *base_hdr;
+	struct fi_msg msg = {0};
 
 	base_hdr = rxr_get_base_hdr(pkt_entry->pkt);
 	assert(base_hdr->type >= RXR_REQ_PKT_BEGIN);
 	tag = 0;
 
 	if (!consumer_entry) {
-		rx_entry = rxr_ep_get_rx_entry(ep, posted_entry->iov,
-					       posted_entry->iov_count, tag,
-					       0, NULL, pkt_entry->addr, ofi_op_msg,
+		msg.msg_iov = posted_entry->iov;
+		msg.iov_count = posted_entry->iov_count;
+		msg.addr = pkt_entry->addr;
+		rx_entry = rxr_ep_get_rx_entry(ep, &msg, tag, 0, ofi_op_msg,
 					       posted_entry->fi_flags);
 		if (OFI_UNLIKELY(!rx_entry))
 			return NULL;
