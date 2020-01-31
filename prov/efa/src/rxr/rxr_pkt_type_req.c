@@ -997,7 +997,7 @@ void rxr_pkt_handle_long_rtw_sent(struct rxr_ep *ep,
 	tx_entry->bytes_sent += rxr_pkt_req_data_size(pkt_entry);
 	assert(tx_entry->bytes_sent < tx_entry->total_len);
 
-	if (efa_mr_cache_enable && !tx_entry->desc[0])
+	if (efa_mr_cache_enable)
 		rxr_inline_mr_reg(rxr_ep_domain(ep), tx_entry);
 }
 
