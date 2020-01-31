@@ -154,7 +154,10 @@ struct rxr_rdma_entry *rxr_rdma_alloc_entry(struct rxr_ep *ep, int entry_type, v
 		/* EFA provider need local buffer registration */
 		for (i = 0; i < rdma_entry->iov_count; ++i) {
 			if (mr_desc && mr_desc[i]) {
-				rdma_entry->mr_desc[i] = mr_desc[i];
+				struct rxr_mr *rxr_mr;
+
+				rxr_mr = (struct rxr_mr *)mr_desc[i];
+				rdma_entry->mr_desc[i] = fi_mr_desc(rxr_mr->msg_mr);
 			} else {
 				err = fi_mr_reg(rxr_ep_domain(ep)->rdm_domain,
 						rdma_entry->iov[i].iov_base, rdma_entry->iov[i].iov_len,
@@ -241,16 +244,18 @@ int rxr_rdma_init_read_iov(struct rxr_ep *ep,
 			   struct fi_rma_iov *read_iov)
 {
 	int i, err;
-	struct fid_mr *mr;
+	struct rxr_mr *rxr_mr;
+	struct ibv_mr *ibv_mr;
 	struct rxr_peer *peer;
 
 	peer = rxr_ep_get_peer(ep, tx_entry->addr);
 	if (tx_entry->desc[0]) {
 		for (i=0; i < tx_entry->iov_count; ++i) {
-			mr = (struct fid_mr *)tx_entry->desc[i];
 			read_iov[i].addr = (uint64_t)tx_entry->iov[i].iov_base;
 			read_iov[i].len = tx_entry->iov[i].iov_len;
-			read_iov[i].key = fi_mr_key(mr);
+			rxr_mr = (struct rxr_mr *)tx_entry->desc[i];
+			ibv_mr = (struct ibv_mr *)fi_mr_desc(rxr_mr->msg_mr);
+			read_iov[i].key = ibv_mr->rkey;
 		}
 	} else if (peer->is_local) {
 		for (i=0; i < tx_entry->iov_count; ++i) {

@@ -64,7 +64,7 @@ ssize_t rxr_pkt_send_data(struct rxr_ep *ep,
 	data_pkt->hdr.seg_size = payload_size;
 
 #ifdef HAVE_CUDA
-	if (rxr_ep_is_cuda_mr((struct fid_mr*)&tx_entry->desc[0]))
+	if (rxr_ep_is_cuda_mr(tx_entry->desc[0]))
 		pkt_entry->pkt_size = rxr_copy_from_cuda_iov(data_pkt->data,
 							     payload_size,
 							     tx_entry->iov,
@@ -178,10 +178,17 @@ ssize_t rxr_pkt_send_data_mr_cache(struct rxr_ep *ep,
 			iov[i].iov_base =
 				(char *)tx_iov[tx_entry->iov_index].iov_base +
 				tx_entry->iov_offset;
-			if (rxr_ep_mr_local(ep))
-				desc[i] = tx_entry->desc[tx_entry->iov_index] ?
-					  tx_entry->desc[tx_entry->iov_index] :
-					  fi_mr_desc(tx_entry->mr[tx_entry->iov_index]);
+			if (rxr_ep_mr_local(ep)) {
+				if (tx_entry->desc[tx_entry->iov_index]) {
+					struct rxr_mr *rxr_mr;
+					
+					rxr_mr = (struct rxr_mr *)tx_entry->desc[tx_entry->iov_index];
+
+					desc[i] = fi_mr_desc(rxr_mr->msg_mr);
+				} else {
+					desc[i] = fi_mr_desc(tx_entry->mr[tx_entry->iov_index]);
+				}
+			}
 
 			len = tx_iov[tx_entry->iov_index].iov_len
 			      - tx_entry->iov_offset;
@@ -263,7 +270,7 @@ int rxr_pkt_handle_data(struct rxr_ep *ep,
 	if (OFI_LIKELY(!(rx_entry->rxr_flags & RXR_RECV_CANCEL)) &&
 	    rx_entry->cq_entry.len > seg_offset) {
 #ifdef HAVE_CUDA
-		if (rxr_ep_is_cuda_mr((struct fid_mr*)&rx_entry->desc[0]))
+		if (rxr_ep_is_cuda_mr(rx_entry->desc[0]))
 			bytes_copied = rxr_copy_to_cuda_iov(rx_entry->iov, rx_entry->iov_count,
 							    seg_offset, data, data_size);
 		else

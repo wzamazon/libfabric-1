@@ -174,7 +174,7 @@ int rxr_mr_regattr(struct fid *domain_fid, const struct fi_mr_attr *attr,
 	rxr_mr->mr_fid.fid.fclass = FI_CLASS_MR;
 	rxr_mr->mr_fid.fid.context = attr->context;
 	rxr_mr->mr_fid.fid.ops = &rxr_mr_ops;
-	rxr_mr->mr_fid.mem_desc = rxr_mr->msg_mr;
+	rxr_mr->mr_fid.mem_desc = rxr_mr;
 	rxr_mr->mr_fid.key = fi_mr_key(rxr_mr->msg_mr);
 	rxr_mr->domain = rxr_domain;
 	rxr_mr->peer.iface = attr->iface;

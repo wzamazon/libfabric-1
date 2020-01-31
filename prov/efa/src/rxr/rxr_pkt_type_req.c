@@ -216,7 +216,7 @@ size_t rxr_pkt_req_copy_data(struct rxr_rx_entry *rx_entry,
 	if (rx_entry->cq_entry.len > rx_entry->total_len)
 		rx_entry->cq_entry.len = rx_entry->total_len;
 #ifdef HAVE_CUDA
-	if (rxr_ep_is_cuda_mr((struct fid_mr*)&rx_entry->desc[0]))
+	if (rxr_ep_is_cuda_mr(rx_entry->desc[0]))
 		bytes_copied = rxr_copy_to_cuda_iov(rx_entry->iov, rx_entry->iov_count,
 					            0, data, data_size);
 	else
@@ -264,7 +264,7 @@ void rxr_pkt_init_rtm(struct rxr_ep *ep,
 
 	data = (char *)pkt_entry->pkt + pkt_entry->hdr_size;
 #ifdef HAVE_CUDA
-	if (rxr_ep_is_cuda_mr((struct fid_mr*)&tx_entry->desc[0]))
+	if (rxr_ep_is_cuda_mr(tx_entry->desc[0]))
 		data_size = rxr_copy_from_cuda_iov(data,
 						   ep->mtu_size - pkt_entry->hdr_size,
 						   tx_entry->iov,
@@ -682,7 +682,7 @@ ssize_t rxr_pkt_proc_matched_medium_rtm(struct rxr_ep *ep,
 		offset = rxr_get_medium_rtm_base_hdr(cur->pkt)->offset;
 		data_size = cur->pkt_size - cur->hdr_size;
 #ifdef HAVE_CUDA
-		if (rxr_ep_is_cuda_mr((struct fid_mr*)&rx_entry->desc[0]))
+		if (rxr_ep_is_cuda_mr(rx_entry->desc[0]))
 			rxr_copy_to_cuda_iov(rx_entry->iov, rx_entry->iov_count, offset, data, data_size);
 		else
 #endif

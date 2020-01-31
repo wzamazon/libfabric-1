@@ -85,7 +85,7 @@ ssize_t rxr_pkt_post_data(struct rxr_ep *rxr_ep,
 	 */
 #ifdef HAVE_CUDA
 	if (efa_mr_cache_enable ||
-	    rxr_ep_is_cuda_mr((struct fid_mr*)&tx_entry->desc[0]))
+	    rxr_ep_is_cuda_mr(tx_entry->desc[0]))
 #else
 	if (efa_mr_cache_enable)
 #endif
