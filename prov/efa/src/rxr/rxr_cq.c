@@ -703,10 +703,8 @@ int rxr_cq_reorder_msg(struct rxr_ep *ep,
 
 	cur_ooo_entry = *ofi_recvwin_get_msg(peer->robuf, msg_id);
 	if (cur_ooo_entry) {
-		assert(base_hdr->type == RXR_MEDIUM_MSGRTM_PKT ||
-		       base_hdr->type == RXR_MEDIUM_TAGRTM_PKT);
-
-		assert(rxr_get_base_hdr(cur_ooo_entry->pkt)->type == base_hdr->type);
+		assert(rxr_get_base_hdr(ooo_entry->pkt)->type == RXR_MEDIUM_MSGRTM_PKT ||
+		       rxr_get_base_hdr(ooo_entry->pkt)->type == RXR_MEDIUM_TAGRTM_PKT);
 		rxr_pkt_entry_append(cur_ooo_entry, ooo_entry);
 	} else {
 		ofi_recvwin_queue_msg(peer->robuf, &ooo_entry, msg_id);

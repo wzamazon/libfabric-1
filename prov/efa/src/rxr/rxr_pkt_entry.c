@@ -232,7 +232,9 @@ struct rxr_pkt_entry *rxr_pkt_entry_clone(struct rxr_ep *ep,
 void rxr_pkt_entry_append(struct rxr_pkt_entry *dst,
 			  struct rxr_pkt_entry *src)
 {
-	assert(dst);
+	assert(dst && src);
+	assert(rxr_get_base_hdr(dst->pkt)->type ==
+	       rxr_get_base_hdr(src->pkt)->type);
 
 	while(dst->next)
 		dst = dst->next;
