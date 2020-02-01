@@ -658,7 +658,12 @@ void rxr_cq_handle_shm_completion(struct rxr_ep *ep, struct fi_cq_data_entry *cq
 			fi_strerror(-ret));
 	}
 
-	efa_cntr_report_rx_completion(&ep->util_ep, cq_entry->flags);
+	if (cq_entry->flags & FI_ATOMIC) {
+		efa_cntr_report_tx_completion(&ep->util_ep, cq_entry->flags);
+	} else {
+		assert(cq_entry->flags & FI_REMOTE_CQ_DATA);
+		efa_cntr_report_rx_completion(&ep->util_ep, cq_entry->flags);
+	}
 }
 
 int rxr_cq_reorder_msg(struct rxr_ep *ep,
