@@ -509,6 +509,7 @@ size_t rxr_pkt_rtm_total_len(struct rxr_pkt_entry *pkt_entry)
 	return 0;
 }
 
+/*   both expected and unexp rx_entry will call this function */
 void rxr_pkt_rtm_init_rx_entry(struct rxr_pkt_entry *pkt_entry,
 			       struct rxr_rx_entry *rx_entry)
 {
@@ -524,6 +525,8 @@ void rxr_pkt_rtm_init_rx_entry(struct rxr_pkt_entry *pkt_entry,
 	rx_entry->addr = pkt_entry->addr;
 	rx_entry->msg_id = rxr_pkt_msg_id(pkt_entry);
 	rx_entry->total_len = rxr_pkt_rtm_total_len(pkt_entry);
+	rx_entry->tag = rxr_pkt_rtm_tag(pkt_entry);
+	rx_entry->cq_entry.tag = rx_entry->tag;
 }
 
 struct rxr_rx_entry *rxr_pkt_get_rtm_matched_rx_entry(struct rxr_ep *ep,
