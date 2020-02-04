@@ -38,6 +38,10 @@
 #include "rxr_msg.h"
 #include "rxr_rdma.h"
 
+#ifdef HAVE_CUDA
+#include "efa_cuda.h"
+#endif
+
 /*
  * Utility constants and funnctions shared by all REQ packe
  * types.
@@ -220,10 +224,9 @@ size_t rxr_pkt_req_copy_data(struct rxr_rx_entry *rx_entry,
 		bytes_copied = rxr_copy_to_cuda_iov(rx_entry->iov, rx_entry->iov_count,
 					            0, data, data_size);
 	else
-#else
+#endif
 		bytes_copied = ofi_copy_to_iov(rx_entry->iov, rx_entry->iov_count,
 					       0, data, data_size);
-#endif
 
 	if (OFI_UNLIKELY(bytes_copied < data_size)) {
 		/* recv buffer is not big enough to hold req, this must be a truncated message */

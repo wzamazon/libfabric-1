@@ -272,7 +272,7 @@ int rxr_pkt_handle_data(struct rxr_ep *ep,
 #ifdef HAVE_CUDA
 		if (rxr_ep_is_cuda_mr(rx_entry->desc[0]))
 			bytes_copied = rxr_copy_to_cuda_iov(rx_entry->iov, rx_entry->iov_count,
-							    seg_offset, data, data_size);
+							    seg_offset, data, seg_size);
 		else
 #endif
 			bytes_copied = ofi_copy_to_iov(rx_entry->iov, rx_entry->iov_count,
