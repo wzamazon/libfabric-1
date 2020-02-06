@@ -852,8 +852,8 @@ void rxr_ep_calc_cts_window_credits(struct rxr_ep *ep, struct rxr_peer *peer,
 int rxr_ep_set_tx_credit_request(struct rxr_ep *rxr_ep,
 				 struct rxr_tx_entry *tx_entry);
 
-void rxr_inline_mr_reg(struct rxr_domain *rxr_domain,
-		       struct rxr_tx_entry *tx_entry);
+void rxr_prepare_mr_send(struct rxr_domain *rxr_domain,
+		         struct rxr_tx_entry *tx_entry);
 
 struct rxr_rx_entry *rxr_ep_lookup_mediumrtm_rx_entry(struct rxr_ep *ep,
 						      struct rxr_pkt_entry *pkt_entry);

@@ -205,10 +205,22 @@ ssize_t rxr_pkt_send_data_mr_cache(struct rxr_ep *ep,
 			 * Copies any consecutive small iov's, returning size
 			 * written while updating iov index and offset
 			 */
-			len = rxr_copy_from_iov((char *)data_pkt->data +
-						 pkt_used,
-						 remaining_len,
-						 tx_entry);
+
+#ifdef HAVE_CUDA
+			if (rxr_ep_is_cuda_mr(tx_entry->desc[0]))
+				len = rxr_copy_from_cuda_iov((char *)data_pkt->data +
+							     pkt_used,
+							     remaining_len,
+							     tx_entry->iov,
+							     tx_entry->iov_count,
+							     tx_entry->bytes_sent);
+
+			else
+#endif
+				len = rxr_copy_from_iov((char *)data_pkt->data +
+							 pkt_used,
+							 remaining_len,
+							 tx_entry);
 
 			iov[i].iov_base = (char *)data_pkt->data + pkt_used;
 			iov[i].iov_len = len;
