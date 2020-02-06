@@ -271,7 +271,7 @@ void rxr_pkt_init_rtm(struct rxr_ep *ep,
 		data_size = rxr_copy_from_cuda_iov(data,
 						   ep->mtu_size - pkt_entry->hdr_size,
 						   tx_entry->iov,
-						   tx_entry->iov_count, 0);
+						   tx_entry->iov_count, data_offset);
 	else
 #endif
 		data_size = ofi_copy_from_iov(data, ep->mtu_size - pkt_entry->hdr_size,
