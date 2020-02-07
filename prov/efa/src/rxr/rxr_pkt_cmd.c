@@ -31,13 +31,12 @@
  * SOFTWARE.
  */
 
+#include <ofi_cuda.h>
+
 #include "efa.h"
 #include "rxr.h"
 #include "rxr_cntr.h"
-
-#ifdef HAVE_CUDA
 #include "efa_cuda.h"
-#endif
 
 /* This file implements 4 actions that can be applied to a packet:
  *          posting,
@@ -83,7 +82,7 @@ ssize_t rxr_pkt_post_data(struct rxr_ep *rxr_ep,
 	 * For now, always send CUDA buffers through
 	 * rxr_ep_mr_send_data_pkt_entry().
 	 */
-#ifdef HAVE_CUDA
+#ifdef HAVE_LIBCUDA
 	if (efa_mr_cache_enable ||
 	    rxr_ep_is_cuda_mr(tx_entry->desc[0]))
 #else

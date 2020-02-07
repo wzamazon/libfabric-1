@@ -31,11 +31,10 @@
  * SOFTWARE.
  */
 
+#include <ofi_cuda.h>
+#include "efa_cuda.h"
 #include "rxr.h"
 #include "rxr_msg.h"
-#ifdef HAVE_CUDA
-#include "efa_cuda.h"
-#endif
 
 /*
  * This function contains data packet related functions
@@ -63,9 +62,9 @@ ssize_t rxr_pkt_send_data(struct rxr_ep *ep,
 	data_pkt = (struct rxr_data_pkt *)pkt_entry->pkt;
 	data_pkt->hdr.seg_size = payload_size;
 
-#ifdef HAVE_CUDA
+#ifdef HAVE_LIBCUDA
 	if (rxr_ep_is_cuda_mr(tx_entry->desc[0]))
-		pkt_entry->pkt_size = rxr_copy_from_cuda_iov(data_pkt->data,
+		pkt_entry->pkt_size = ofi_copy_from_cuda_iov(data_pkt->data,
 							     payload_size,
 							     tx_entry->iov,
 							     tx_entry->iov_count,
@@ -206,9 +205,9 @@ ssize_t rxr_pkt_send_data_mr_cache(struct rxr_ep *ep,
 			 * written while updating iov index and offset
 			 */
 
-#ifdef HAVE_CUDA
+#ifdef HAVE_LIBCUDA
 			if (rxr_ep_is_cuda_mr(tx_entry->desc[0]))
-				len = rxr_copy_from_cuda_iov((char *)data_pkt->data +
+				len = ofi_copy_from_cuda_iov((char *)data_pkt->data +
 							     pkt_used,
 							     remaining_len,
 							     tx_entry->iov,
@@ -281,9 +280,9 @@ int rxr_pkt_handle_data(struct rxr_ep *ep,
 	/* we are sinking message for CANCEL/DISCARD entry */
 	if (OFI_LIKELY(!(rx_entry->rxr_flags & RXR_RECV_CANCEL)) &&
 	    rx_entry->cq_entry.len > seg_offset) {
-#ifdef HAVE_CUDA
+#ifdef HAVE_LIBCUDA
 		if (rxr_ep_is_cuda_mr(rx_entry->desc[0]))
-			bytes_copied = rxr_copy_to_cuda_iov(rx_entry->iov, rx_entry->iov_count,
+			bytes_copied = ofi_copy_to_cuda_iov(rx_entry->iov, rx_entry->iov_count,
 							    seg_offset, data, seg_size);
 		else
 #endif

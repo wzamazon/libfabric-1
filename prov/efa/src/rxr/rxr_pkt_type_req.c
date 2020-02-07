@@ -32,15 +32,13 @@
  */
 
 #include <ofi_atomic.h>
+#include <ofi_cuda.h>
 #include "efa.h"
 #include "rxr.h"
 #include "rxr_rma.h"
 #include "rxr_msg.h"
 #include "rxr_rdma.h"
-
-#ifdef HAVE_CUDA
 #include "efa_cuda.h"
-#endif
 
 /*
  * Utility constants and funnctions shared by all REQ packe
@@ -219,9 +217,9 @@ size_t rxr_pkt_req_copy_data(struct rxr_rx_entry *rx_entry,
 	 */
 	if (rx_entry->cq_entry.len > rx_entry->total_len)
 		rx_entry->cq_entry.len = rx_entry->total_len;
-#ifdef HAVE_CUDA
+#ifdef HAVE_LIBCUDA
 	if (rxr_ep_is_cuda_mr(rx_entry->desc[0]))
-		bytes_copied = rxr_copy_to_cuda_iov(rx_entry->iov, rx_entry->iov_count,
+		bytes_copied = ofi_copy_to_cuda_iov(rx_entry->iov, rx_entry->iov_count,
 					            0, data, data_size);
 	else
 #endif
@@ -266,9 +264,9 @@ void rxr_pkt_init_rtm(struct rxr_ep *ep,
 	rtm_hdr->msg_id = tx_entry->msg_id;
 
 	data = (char *)pkt_entry->pkt + pkt_entry->hdr_size;
-#ifdef HAVE_CUDA
+#ifdef HAVE_LIBCUDA
 	if (rxr_ep_is_cuda_mr(tx_entry->desc[0]))
-		data_size = rxr_copy_from_cuda_iov(data,
+		data_size = ofi_copy_from_cuda_iov(data,
 						   ep->mtu_size - pkt_entry->hdr_size,
 						   tx_entry->iov,
 						   tx_entry->iov_count, data_offset);
@@ -445,7 +443,7 @@ void rxr_pkt_handle_long_rtm_sent(struct rxr_ep *ep,
 	tx_entry->bytes_sent += rxr_pkt_req_data_size(pkt_entry);
 	assert(tx_entry->bytes_sent < tx_entry->total_len);
 
-#ifdef HAVE_CUDA
+#ifdef HAVE_LIBCUDA
 	if (efa_mr_cache_enable ||
 	    rxr_ep_is_cuda_mr(tx_entry->desc[0]))
 #else
@@ -692,9 +690,9 @@ ssize_t rxr_pkt_proc_matched_medium_rtm(struct rxr_ep *ep,
 		data = (char *)cur->pkt + cur->hdr_size;
 		offset = rxr_get_medium_rtm_base_hdr(cur->pkt)->offset;
 		data_size = cur->pkt_size - cur->hdr_size;
-#ifdef HAVE_CUDA
+#ifdef HAVE_LIBCUDA
 		if (rxr_ep_is_cuda_mr(rx_entry->desc[0]))
-			rxr_copy_to_cuda_iov(rx_entry->iov, rx_entry->iov_count, offset, data, data_size);
+			ofi_copy_to_cuda_iov(rx_entry->iov, rx_entry->iov_count, offset, data, data_size);
 		else
 #endif
 			ofi_copy_to_iov(rx_entry->iov, rx_entry->iov_count, offset, data, data_size);
@@ -1028,7 +1026,7 @@ void rxr_pkt_handle_long_rtw_sent(struct rxr_ep *ep,
 	tx_entry->bytes_sent += rxr_pkt_req_data_size(pkt_entry);
 	assert(tx_entry->bytes_sent < tx_entry->total_len);
 
-#ifdef HAVE_CUDA
+#ifdef HAVE_LIBCUDA
 	if (efa_mr_cache_enable ||
 	    rxr_ep_is_cuda_mr(tx_entry->desc[0]))
 #else

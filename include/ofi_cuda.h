@@ -38,6 +38,7 @@
 #define _OFI_CUDA_H_
 #ifdef HAVE_LIBCUDA
 
+#include <ofi_iov.h>
 #include <cuda.h>
 #include <cuda_runtime.h>
 
