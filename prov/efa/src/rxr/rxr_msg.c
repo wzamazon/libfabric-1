@@ -167,6 +167,9 @@ ssize_t rxr_msg_generic_send(struct fid_ep *ep, const struct fi_msg *msg,
 		} else {
 			err = rxr_pkt_post_ctrl_or_queue(rxr_ep, RXR_TX_ENTRY, tx_entry,
 							 read_pkt_type, 0);
+			if (err == -FI_ENOMEM)
+				err = rxr_pkt_post_ctrl_or_queue(rxr_ep, RXR_TX_ENTRY, tx_entry,
+								 long_pkt_type, 0);
 		}
 	}
 

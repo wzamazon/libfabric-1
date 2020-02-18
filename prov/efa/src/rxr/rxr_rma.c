@@ -400,12 +400,8 @@ ssize_t rxr_rma_writemsg(struct fid_ep *ep,
 
 	if (rxr_env.enable_shm_transfer && peer->is_local) {
 		err = rxr_rma_post_shm_write(rxr_ep, tx_entry);
-		if (OFI_UNLIKELY(err))
-			rxr_release_tx_entry(rxr_ep, tx_entry);
 	}  else if (tx_entry->total_len < rxr_pkt_req_max_data_size(rxr_ep, tx_entry->addr, RXR_EAGER_RTW_PKT)) {
 		err = rxr_pkt_post_ctrl_or_queue(rxr_ep, RXR_TX_ENTRY, tx_entry, RXR_EAGER_RTW_PKT, 0);
-		if (OFI_UNLIKELY(err))
-			rxr_release_tx_entry(rxr_ep, tx_entry);
 	} else if (!efa_support_rdma_read(rxr_ep->rdm_ep) ||
 		   tx_entry->total_len < rxr_env.efa_max_emulated_write_size) {
 		err = rxr_ep_set_tx_credit_request(rxr_ep, tx_entry);
@@ -415,13 +411,14 @@ ssize_t rxr_rma_writemsg(struct fid_ep *ep,
 		}
 
 		err = rxr_pkt_post_ctrl_or_queue(rxr_ep, RXR_TX_ENTRY, tx_entry, RXR_LONG_RTW_PKT, 0);
-		if (OFI_UNLIKELY(err))
-			rxr_release_tx_entry(rxr_ep, tx_entry);
 	} else {
 		err = rxr_pkt_post_ctrl_or_queue(rxr_ep, RXR_TX_ENTRY, tx_entry, RXR_READ_RTW_PKT, 0);
-		if (OFI_UNLIKELY(err))
-			rxr_release_tx_entry(rxr_ep, tx_entry);
+		if (err == -FI_ENOMEM)
+			err = rxr_pkt_post_ctrl_or_queue(rxr_ep, RXR_TX_ENTRY, tx_entry, RXR_LONG_RTW_PKT, 0);
 	}
+
+	if (OFI_UNLIKELY(err))
+		rxr_release_tx_entry(rxr_ep, tx_entry);
 
 out:
 	fastlock_release(&rxr_ep->util_ep.lock);
