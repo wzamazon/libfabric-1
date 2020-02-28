@@ -833,7 +833,8 @@ const char *ofi_eq_strerror(struct fid_eq *eq_fid, int prov_errno,
 
 #define FI_SECONDARY_CAPS (FI_MULTI_RECV | FI_SOURCE | FI_RMA_EVENT | \
 			   FI_SHARED_AV | FI_TRIGGER | FI_FENCE | \
-			   FI_LOCAL_COMM | FI_REMOTE_COMM)
+			   FI_LOCAL_COMM | FI_REMOTE_COMM | \
+			   FI_HMEM)
 
 #define OFI_TX_MSG_CAPS (FI_MSG | FI_SEND)
 #define OFI_RX_MSG_CAPS (FI_MSG | FI_RECV)
