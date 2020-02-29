@@ -702,13 +702,13 @@ ssize_t rxr_pkt_proc_matched_medium_rtm(struct rxr_ep *ep,
 	}
 
 	if (rx_entry->total_len == rx_entry->bytes_done) {
+		rxr_pkt_rx_map_remove(ep, pkt_entry, rx_entry);
 		/*
 		 * rxr_cq_handle_rx_completion() releases pkt_entry, thus
 		 * we do not release it here.
 		 */
 		rxr_cq_handle_rx_completion(ep, pkt_entry, rx_entry);
 		rxr_msg_multi_recv_free_posted_entry(ep, rx_entry);
-		rxr_pkt_rx_map_remove(ep, pkt_entry, rx_entry);
 		rxr_release_rx_entry(ep, rx_entry);
 		return 0;
 	}
