@@ -389,6 +389,7 @@ void rxr_tx_entry_init(struct rxr_ep *ep, struct rxr_tx_entry *tx_entry,
 		tx_entry->cq_entry.buf = NULL;
 
 	tx_entry->cq_entry.data = msg->data;
+	tx_entry->cq_entry.tag = 0;
 	switch (op) {
 	case ofi_op_tagged:
 		tx_entry->cq_entry.flags = FI_TRANSMIT | FI_MSG | FI_TAGGED;
