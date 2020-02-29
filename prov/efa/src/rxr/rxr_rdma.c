@@ -157,6 +157,7 @@ struct rxr_rdma_entry *rxr_rdma_alloc_entry(struct rxr_ep *ep, int entry_type, v
 				struct rxr_mr *rxr_mr;
 
 				rxr_mr = (struct rxr_mr *)mr_desc[i];
+				rdma_entry->mr[i] = NULL;
 				rdma_entry->mr_desc[i] = fi_mr_desc(rxr_mr->msg_mr);
 			} else {
 				err = fi_mr_reg(rxr_ep_domain(ep)->rdm_domain,
