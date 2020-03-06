@@ -676,7 +676,7 @@ struct rxr_ep {
 /*
  * Control header with completion data. CQ data length is static.
  */
-#define RXR_CQ_DATA_SIZE (8)
+#define RXR_CQ_DATA_SIZE (4)
 
 static inline void rxr_copy_shm_cq_entry(struct fi_cq_tagged_entry *cq_tagged_entry,
 					 struct fi_cq_data_entry *shm_cq_entry)

@@ -399,7 +399,7 @@ static int efa_ep_enable(struct fid_ep *ep_fid)
 	if (ep->domain->rdm) {
 		attr_ex.qp_type = IBV_QPT_DRIVER;
 		attr_ex.comp_mask = IBV_QP_INIT_ATTR_PD | IBV_QP_INIT_ATTR_SEND_OPS_FLAGS;
-		attr_ex.send_ops_flags = IBV_QP_EX_WITH_SEND;
+		attr_ex.send_ops_flags = IBV_QP_EX_WITH_SEND | IBV_QP_EX_WITH_SEND_WITH_IMM;
 		if (ep->domain->ctx->max_rdma_size > 0)
 			attr_ex.send_ops_flags |= IBV_QP_EX_WITH_RDMA_READ;
 		attr_ex.pd = ibv_pd;

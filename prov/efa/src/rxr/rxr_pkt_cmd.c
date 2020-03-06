@@ -474,6 +474,11 @@ void rxr_pkt_handle_recv_completion(struct rxr_ep *ep,
 	pkt_entry->pkt_size = cq_entry->len;
 	assert(pkt_entry->pkt_size > 0);
 
+	if (cq_entry->flags & FI_REMOTE_CQ_DATA) {
+		pkt_entry->flags |= FI_REMOTE_CQ_DATA;
+		pkt_entry->cq_data = cq_entry->data;
+	}
+
 	base_hdr = rxr_get_base_hdr(pkt_entry->pkt);
 	if (base_hdr->type >= RXR_REQ_PKT_BEGIN) {
 		rxr_pkt_proc_req_common_hdr(pkt_entry);

@@ -70,6 +70,7 @@ struct rxr_pkt_entry *rxr_pkt_entry_alloc(struct rxr_ep *ep,
 #endif
 	pkt_entry->state = RXR_PKT_ENTRY_IN_USE;
 	pkt_entry->next = NULL;
+	pkt_entry->flags = 0;
 	return pkt_entry;
 }
 
@@ -289,7 +290,12 @@ ssize_t rxr_pkt_entry_sendv(struct rxr_ep *ep,
 	peer = rxr_ep_get_peer(ep, addr);
 	msg.addr = peer->is_local ? peer->shm_fiaddr : addr;
 	msg.context = pkt_entry;
-	msg.data = 0;
+	if (pkt_entry->flags & FI_REMOTE_CQ_DATA) {
+		flags |= FI_REMOTE_CQ_DATA;
+		msg.data = pkt_entry->cq_data;
+	} else {
+		msg.data = 0;
+	}
 
 	return rxr_pkt_entry_sendmsg(ep, pkt_entry, &msg, flags);
 }

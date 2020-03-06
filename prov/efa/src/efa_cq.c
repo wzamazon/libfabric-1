@@ -113,8 +113,14 @@ static void efa_cq_read_data_entry(struct efa_wc *wc, int i, void *buf)
 
 	entry[i].op_context = (void *)(uintptr_t)wc->ibv_wc.wr_id;
 	entry[i].flags = efa_cq_wc_to_fi_flags(wc);
-	entry[i].data = 0;
 	entry[i].len = (uint64_t)wc->ibv_wc.byte_len;
+	if (wc->ibv_wc.wc_flags & IBV_WC_WITH_IMM) {
+		entry[i].flags |= FI_REMOTE_CQ_DATA;
+		entry[i].data = ntohl(wc->ibv_wc.imm_data);
+		fprintf(stderr, "received with imm_data. data=%x\n", entry[i].data);
+	} else {
+		entry[i].data = 0;
+	}
 }
 
 ssize_t efa_cq_readfrom(struct fid_cq *cq_fid, void *buf, size_t count,
@@ -174,6 +180,8 @@ ssize_t efa_cq_readfrom(struct fid_cq *cq_fid, void *buf, size_t count,
 							  wc.ibv_wc.slid,
 							  wc.ibv_wc.src_qp);
 		}
+
+		fprintf(stderr, "read cq\n");
 		cq->read_entry(&wc, i, buf);
 	}
 

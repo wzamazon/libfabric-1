@@ -292,62 +292,35 @@ static void efa_post_send_sgl(struct efa_ep *ep, const struct fi_msg *msg,
 
 static ssize_t efa_post_send(struct efa_ep *ep, const struct fi_msg *msg, uint64_t flags)
 {
-	struct efa_qp *qp = ep->qp;
-	struct ibv_send_wr *bad_wr;
-	struct efa_send_wr *ewr;
-	struct ibv_send_wr *wr;
-	struct efa_conn *conn;
-	size_t len;
-	int ret;
+        struct efa_qp *qp = ep->qp;
+        struct efa_conn *conn;
+        struct ibv_sge sge_list[3];
+        int i,lkey;
 
-	dump_msg(msg, "send");
+        /* caller must provide desc because efa claim FI_MR_LOCAL */
+        assert(msg->desc);
+        assert(msg->iov_count < 3 );
 
-	ewr = ofi_buf_alloc(ep->send_wr_pool);
-	if (OFI_UNLIKELY(!ewr))
-		return -FI_ENOMEM;
+        ibv_wr_start(qp->ibv_qp_ex);
+        qp->ibv_qp_ex->wr_id = (uintptr_t)msg->context;
 
-	memset(ewr, 0, sizeof(*ewr) + sizeof(*ewr->sge) * msg->iov_count);
-	wr = &ewr->wr;
-	conn = ep->av->addr_to_conn(ep->av, msg->addr);
-
-	ret = efa_post_send_validate(ep, msg, conn, flags, &len);
-	if (OFI_UNLIKELY(ret)) {
-		ofi_buf_free(ewr);
-		goto out_err;
+	if (flags & FI_REMOTE_CQ_DATA) {
+	        fprintf(stderr, "send with imm data. data: %d\n", msg->data);
+        	ibv_wr_send_imm(qp->ibv_qp_ex, msg->data);
+	} else {
+		ibv_wr_send(qp->ibv_qp_ex);
 	}
 
-	efa_post_send_sgl(ep, msg, ewr);
+        for (i=0; i < msg->iov_count; ++i) {
+                sge_list[i].addr = (uint64_t)msg->msg_iov[i].iov_base;
+                sge_list[i].length = msg->msg_iov[i].iov_len;
+                sge_list[i].lkey = (uint32_t)(uintptr_t)msg->desc[i];
+        }
 
-	if (flags & FI_INJECT)
-		wr->send_flags |= IBV_SEND_INLINE;
-
-	wr->opcode = IBV_WR_SEND;
-	wr->wr_id = (uintptr_t)msg->context;
-	wr->wr.ud.ah = conn->ah.ibv_ah;
-	wr->wr.ud.remote_qpn = conn->ep_addr.qpn;
-	wr->wr.ud.remote_qkey = EFA_QKEY;
-
-	ep->xmit_more_wr_tail->next = wr;
-	ep->xmit_more_wr_tail = wr;
-
-	if (flags & FI_MORE)
-		return 0;
-
-	ret = ibv_post_send(qp->ibv_qp, ep->xmit_more_wr_head.next, &bad_wr);
-
-	free_send_wr_list(ep->xmit_more_wr_head.next);
-	ep->xmit_more_wr_tail = &ep->xmit_more_wr_head;
-
-	return ret;
-
-out_err:
-	if (ep->xmit_more_wr_head.next)
-		ibv_post_send(qp->ibv_qp, ep->xmit_more_wr_head.next, &bad_wr);
-
-	free_send_wr_list(ep->xmit_more_wr_head.next);
-	ep->xmit_more_wr_tail = &ep->xmit_more_wr_head;
-
-	return ret;
+        ibv_wr_set_sge_list(qp->ibv_qp_ex, msg->iov_count, sge_list);
+        conn = ep->av->addr_to_conn(ep->av, msg->addr);
+        ibv_wr_set_ud_addr(qp->ibv_qp_ex, conn->ah.ibv_ah, conn->ep_addr.qpn, EFA_QKEY);
+        return ibv_wr_complete(qp->ibv_qp_ex);
 }
 
 static ssize_t efa_ep_sendmsg(struct fid_ep *ep_fid, const struct fi_msg *msg, uint64_t flags)

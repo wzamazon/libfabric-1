@@ -118,6 +118,10 @@ void rxr_pkt_init_req_hdr(struct rxr_ep *ep,
 		cq_data_hdr = (struct rxr_req_opt_cq_data_hdr *)opt_hdr;
 		cq_data_hdr->cq_data = tx_entry->cq_entry.data;
 		opt_hdr += sizeof(*cq_data_hdr);
+
+		pkt_entry->flags |= FI_REMOTE_CQ_DATA;
+		pkt_entry->cq_data = tx_entry->cq_entry.data;
+		fprintf(stderr, "init_req_hdr, data=%x\n", pkt_entry->cq_data);
 	}
 
 	pkt_entry->addr = tx_entry->addr;

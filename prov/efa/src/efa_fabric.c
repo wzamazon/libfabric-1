@@ -101,7 +101,7 @@ const struct fi_domain_attr efa_domain_attr = {
 
 	.mr_mode		= OFI_MR_BASIC_MAP | FI_MR_LOCAL | FI_MR_BASIC,
 	.mr_key_size		= sizeof_field(struct ibv_sge, lkey),
-	.cq_data_size		= 0,
+	.cq_data_size		= 4,
 	.tx_ctx_cnt		= 1024,
 	.rx_ctx_cnt		= 1024,
 	.max_ep_tx_ctx		= 1,

@@ -484,6 +484,7 @@ ssize_t rxr_rma_writedata(struct fid_ep *ep, const void *buf, size_t len,
 	msg.rma_iov_count = 1;
 	msg.data = data;
 
+	fprintf(stderr, "rxr_rma_writedata: %lx\n", msg.data);
 	return rxr_rma_writemsg(ep, &msg, FI_REMOTE_CQ_DATA);
 }
 

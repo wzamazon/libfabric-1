@@ -474,6 +474,9 @@ void rxr_cq_write_rx_completion(struct rxr_ep *ep,
 		return;
 	}
 
+	if (rx_entry->cq_entry.flags & FI_REMOTE_CQ_DATA)
+		fprintf(stderr, "writing rx completion with remote cqdata. cq_data: %lx\n", rx_entry->cq_entry.data);
+
 	if (!(rx_entry->rxr_flags & RXR_RECV_CANCEL) &&
 	    (ofi_need_completion(rxr_rx_flags(ep), rx_entry->fi_flags) ||
 	     (rx_entry->cq_entry.flags & FI_MULTI_RECV))) {

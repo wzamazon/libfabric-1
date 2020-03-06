@@ -62,7 +62,8 @@ struct rxr_pkt_entry {
 	size_t pkt_size;
 
 	size_t hdr_size;
-	void *raw_addr;
+	void *raw_addr; /* pointer to EFA raw address */
+	uint64_t flags; /* FI_REMOTE_CQ_DATA */
 	uint64_t cq_data;
 
 	struct fid_mr *mr;
@@ -71,11 +72,8 @@ struct rxr_pkt_entry {
 	enum rxr_pkt_entry_type type;
 	enum rxr_pkt_entry_state state;
 	struct rxr_pkt_entry *next;
-#if ENABLE_DEBUG
-/* pad to cache line size of 64 bytes */
-	uint8_t pad[8];
-#else
-	uint8_t pad[24];
+#if !ENABLE_DEBUG
+	uint8_t pad[16];
 #endif
 };
 
