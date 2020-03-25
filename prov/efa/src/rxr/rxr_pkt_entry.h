@@ -50,6 +50,8 @@ enum rxr_pkt_entry_type {
 	RXR_PKT_ENTRY_OOO	    /* entries used to stage out-of-order RTM or RTA */
 };
 
+#define EFA_CORE_IOV_LIMIT 4
+
 struct rxr_pkt_entry {
 	/* for rx/tx_entry queued_pkts list */
 	struct dlist_entry entry;
@@ -64,6 +66,10 @@ struct rxr_pkt_entry {
 	size_t hdr_size;
 	void *raw_addr;
 	uint64_t cq_data;
+
+	int iov_count;
+	struct iovec iov[EFA_CORE_IOV_LIMIT];
+	void *desc[EFA_CORE_IOV_LIMIT];
 
 	struct fid_mr *mr;
 	fi_addr_t addr;
@@ -84,9 +90,9 @@ static inline void *rxr_pkt_start(struct rxr_pkt_entry *pkt_entry)
 	return (void *)((char *)pkt_entry + sizeof(*pkt_entry));
 }
 
-#if defined(static_assert) && defined(__x86_64__)
-static_assert(sizeof(struct rxr_pkt_entry) == 128, "rxr_pkt_entry check");
-#endif
+//#if defined(static_assert) && defined(__x86_64__)
+//static_assert(sizeof(struct rxr_pkt_entry) == 128, "rxr_pkt_entry check");
+//#endif
 
 OFI_DECL_RECVWIN_BUF(struct rxr_pkt_entry*, rxr_robuf, uint32_t);
 DECLARE_FREESTACK(struct rxr_robuf, rxr_robuf_fs);
