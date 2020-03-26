@@ -266,6 +266,12 @@ void rxr_pkt_data_from_tx(struct rxr_ep *ep, struct rxr_pkt_entry *pkt_entry,
 	size_t tx_iov_offset, consumed;
 	char *data;
 
+	if (data_size==0) {
+		pkt_entry->iov_count = 0;
+		pkt_entry->pkt_size = pkt_entry->hdr_size + data_size;
+		return;
+	}
+
 	rxr_locate_iov_pos(tx_entry->iov, tx_entry->iov_count, data_offset,
 			   &tx_iov_index, &tx_iov_offset);
 	assert(tx_iov_index < tx_entry->iov_count);
