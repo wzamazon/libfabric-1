@@ -100,6 +100,14 @@ ssize_t rxr_msg_post_rtm(struct rxr_ep *rxr_ep, struct rxr_tx_entry *tx_entry)
 		/* we do not check the return value of rxr_ep_init_mr_desc()
 		 * because medium message works even if MR registration failed
 		 */
+		{
+			static int warned = 0;
+			if (!warned) {
+				fprintf(stderr, "total_len: %ld use medium\n");
+				warned = 1;
+			}
+		}
+
 		if (efa_mr_cache_enable)
 			rxr_ep_tx_init_mr_desc(rxr_ep, tx_entry, 0, FI_SEND);
 		return rxr_pkt_post_ctrl_or_queue(rxr_ep, RXR_TX_ENTRY, tx_entry,
@@ -118,6 +126,14 @@ ssize_t rxr_msg_post_rtm(struct rxr_ep *rxr_ep, struct rxr_tx_entry *tx_entry)
 		 * If memory registration failed, we continue here
 		 * and fall back to use long message protocol
 		 */
+	}
+
+	{
+		static int warned = 0;
+		if (!warned) {
+			fprintf(stderr, "total_len: %ld use long\n");
+			warned = 1;
+		}
 	}
 
 	err = rxr_ep_set_tx_credit_request(rxr_ep, tx_entry);
