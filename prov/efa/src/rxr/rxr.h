@@ -199,7 +199,6 @@ struct rxr_env {
 	int shm_max_medium_size;
 	int recvwin_size;
 	int cq_size;
-	size_t max_memcpy_size;
 	size_t mtu_size;
 	size_t tx_size;
 	size_t rx_size;

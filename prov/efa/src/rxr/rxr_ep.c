@@ -455,11 +455,6 @@ int rxr_ep_tx_init_mr_desc(struct rxr_domain *rxr_domain,
 			continue;
 		}
 
-		if (tx_entry->iov[i].iov_len <= rxr_env.max_memcpy_size) {
-			assert(!tx_entry->mr[i]);
-			continue;
-		}
-
 		err = fi_mr_reg(rxr_domain->rdm_domain,
 				tx_entry->iov[i].iov_base,
 				tx_entry->iov[i].iov_len,

@@ -55,7 +55,6 @@ struct rxr_env rxr_env = {
 	.shm_max_medium_size = 4096,
 	.recvwin_size = RXR_RECVWIN_SIZE,
 	.cq_size = RXR_DEF_CQ_SIZE,
-	.max_memcpy_size = 4096,
 	.mtu_size = 0,
 	.tx_size = 0,
 	.rx_size = 0,
@@ -86,8 +85,6 @@ static void rxr_init_env(void)
 	fi_param_get_int(&rxr_prov, "shm_max_medium_size", &rxr_env.shm_max_medium_size);
 	fi_param_get_int(&rxr_prov, "recvwin_size", &rxr_env.recvwin_size);
 	fi_param_get_int(&rxr_prov, "cq_size", &rxr_env.cq_size);
-	fi_param_get_size_t(&rxr_prov, "max_memcpy_size",
-			    &rxr_env.max_memcpy_size);
 	fi_param_get_bool(&rxr_prov, "mr_cache_enable",
 			  &efa_mr_cache_enable);
 	fi_param_get_size_t(&rxr_prov, "mr_max_cached_count",
@@ -679,13 +676,11 @@ EFA_INI
 	fi_param_define(&rxr_prov, "cq_size", FI_PARAM_INT,
 			"Define the size of completion queue. (Default: 8192)");
 	fi_param_define(&rxr_prov, "mr_cache_enable", FI_PARAM_BOOL,
-			"Enables using the mr cache and in-line registration instead of a bounce buffer for iov's larger than max_memcpy_size. Defaults to true. When disabled, only uses a bounce buffer.");
+			"Enables using the mr cache and in-line registration instead of a bounce buffer for iov's. Defaults to true. When disabled, only uses a bounce buffer.");
 	fi_param_define(&rxr_prov, "mr_max_cached_count", FI_PARAM_SIZE_T,
 			"Sets the maximum number of memory registrations that can be cached at any time.");
 	fi_param_define(&rxr_prov, "mr_max_cached_size", FI_PARAM_SIZE_T,
 			"Sets the maximum amount of memory that cached memory registrations can hold onto at any time.");
-	fi_param_define(&rxr_prov, "max_memcpy_size", FI_PARAM_SIZE_T,
-			"Threshold size switch between using memory copy into a pre-registered bounce buffer and memory registration on the user buffer. (Default: 4096)");
 	fi_param_define(&rxr_prov, "mtu_size", FI_PARAM_SIZE_T,
 			"Override the MTU size of the device.");
 	fi_param_define(&rxr_prov, "tx_size", FI_PARAM_SIZE_T,
