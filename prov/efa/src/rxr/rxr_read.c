@@ -37,48 +37,6 @@
 #include "rxr_cntr.h"
 #include "rxr_read.h"
 
-int rxr_locate_iov_pos(struct iovec *iov, int iov_count, size_t offset,
-		       int *iov_idx, size_t *iov_offset)
-{
-	int i;
-	size_t curoffset;
-
-	curoffset = 0;
-	for (i = 0; i < iov_count; ++i) {
-		if (offset >= curoffset &&
-		    offset < curoffset + iov[i].iov_len) {
-			*iov_idx = i;
-			*iov_offset = offset - curoffset;
-			return 0;
-		}
-
-		curoffset += iov[i].iov_len;
-	}
-
-	return -1;
-}
-
-int rxr_locate_rma_iov_pos(struct fi_rma_iov *rma_iov, int rma_iov_count, size_t offset,
-			   int *rma_iov_idx, size_t *rma_iov_offset)
-{
-	int i;
-	size_t curoffset;
-
-	curoffset = 0;
-	for (i = 0; i < rma_iov_count; ++i) {
-		if (offset >= curoffset &&
-		    offset < curoffset + rma_iov[i].len) {
-			*rma_iov_idx = i;
-			*rma_iov_offset = offset - curoffset;
-			return 0;
-		}
-
-		curoffset += rma_iov[i].len;
-	}
-
-	return -1;
-}
-
 struct rxr_read_entry *rxr_read_alloc_entry(struct rxr_ep *ep, int entry_type, void *x_entry,
 					    enum rxr_lower_ep_type lower_ep_type)
 {
@@ -261,7 +219,7 @@ int rxr_read_init_iov(struct rxr_ep *ep,
 int rxr_read_post(struct rxr_ep *ep, struct rxr_read_entry *read_entry)
 {
 	int ret;
-	int iov_idx = 0, rma_iov_idx = 0;
+	size_t iov_idx = 0, rma_iov_idx = 0;
 	void *iov_ptr, *rma_iov_ptr;
 	struct rxr_peer *peer;
 	struct rxr_pkt_entry *pkt_entry;
@@ -287,14 +245,14 @@ int rxr_read_post(struct rxr_ep *ep, struct rxr_read_entry *read_entry)
 	}
 	assert(max_read_size > 0);
 
-	ret = rxr_locate_iov_pos(read_entry->iov, read_entry->iov_count,
-				 read_entry->bytes_submitted,
-				 &iov_idx, &iov_offset);
+	ret = ofi_locate_iov(read_entry->iov, read_entry->iov_count,
+			     read_entry->bytes_submitted,
+			     &iov_idx, &iov_offset);
 	assert(ret == 0);
 
-	ret = rxr_locate_rma_iov_pos(read_entry->rma_iov, read_entry->rma_iov_count,
-				     read_entry->bytes_submitted,
-				     &rma_iov_idx, &rma_iov_offset);
+	ret = ofi_locate_rma_iov(read_entry->rma_iov, read_entry->rma_iov_count,
+				 read_entry->bytes_submitted,
+				 &rma_iov_idx, &rma_iov_offset);
 	assert(ret == 0);
 
 	total_iov_len = ofi_total_iov_len(read_entry->iov, read_entry->iov_count);

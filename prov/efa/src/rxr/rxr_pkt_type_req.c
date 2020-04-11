@@ -257,7 +257,7 @@ void rxr_pkt_data_from_tx(struct rxr_ep *ep, struct rxr_pkt_entry *pkt_entry,
 			  struct rxr_tx_entry *tx_entry, size_t data_offset,
 			  size_t data_size)
 {
-	int tx_iov_index;
+	size_t tx_iov_index;
 	size_t tx_iov_offset;
 	char *data;
 
@@ -267,8 +267,8 @@ void rxr_pkt_data_from_tx(struct rxr_ep *ep, struct rxr_pkt_entry *pkt_entry,
 		return;
 	}
 
-	rxr_locate_iov_pos(tx_entry->base.iov, tx_entry->base.iov_count, data_offset,
-			   &tx_iov_index, &tx_iov_offset);
+	ofi_locate_iov(tx_entry->base.iov, tx_entry->base.iov_count, data_offset,
+		       &tx_iov_index, &tx_iov_offset);
 	assert(tx_iov_index < tx_entry->base.iov_count);
 	assert(tx_iov_offset < tx_entry->base.iov[tx_iov_index].iov_len);
 	assert(pkt_entry->hdr_size > 0);

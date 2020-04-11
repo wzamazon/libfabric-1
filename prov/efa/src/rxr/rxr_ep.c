@@ -488,27 +488,15 @@ int rxr_ep_tx_init_mr_desc(struct rxr_ep *rxr_ep,
 void rxr_prepare_desc_send(struct rxr_ep *rxr_ep,
 			   struct rxr_tx_entry *tx_entry)
 {
-	size_t offset;
-	int index;
+	ofi_locate_iov(tx_entry->base.iov, tx_entry->base.iov_count, tx_entry->bytes_sent,
+		       &tx_entry->iov_index, &tx_entry->iov_offset);
 
-	/* Set the iov index and iov offset from bytes sent */
-	offset = tx_entry->bytes_sent;
-	for (index = 0; index < tx_entry->base.iov_count; ++index) {
-		if (offset >= tx_entry->base.iov[index].iov_len) {
-			offset -= tx_entry->base.iov[index].iov_len;
-		} else {
-			tx_entry->iov_index = index;
-			tx_entry->iov_offset = offset;
-			break;
-		}
-	}
-
-	tx_entry->iov_mr_start = index;
+	tx_entry->iov_mr_start = tx_entry->iov_index;
 	/* the return value of rxr_ep_tx_init_mr_desc() is not checked
 	 * because the long message protocol would work with or without
 	 * memory registration and descriptor.
 	 */
-	rxr_ep_tx_init_mr_desc(rxr_ep, tx_entry, index, FI_SEND);
+	rxr_ep_tx_init_mr_desc(rxr_ep, tx_entry, tx_entry->iov_index, FI_SEND);
 }
 
 /* Generic send */
