@@ -476,7 +476,7 @@ void rxr_pkt_handle_long_rtm_sent(struct rxr_ep *ep,
 	assert(tx_entry->bytes_sent < tx_entry->total_len);
 
 	if (efa_mr_cache_enable || rxr_ep_is_cuda_mr(tx_entry->desc[0]))
-		rxr_prepare_desc_send(rxr_ep_domain(ep), tx_entry);
+		rxr_prepare_desc_send(ep, tx_entry);
 }
 
 /*
@@ -1129,7 +1129,7 @@ void rxr_pkt_handle_long_rtw_sent(struct rxr_ep *ep,
 	tx_entry->bytes_sent += rxr_pkt_req_data_size(pkt_entry);
 	assert(tx_entry->bytes_sent < tx_entry->total_len);
 	if (efa_mr_cache_enable || rxr_ep_is_cuda_mr(tx_entry->desc[0]))
-		rxr_prepare_desc_send(rxr_ep_domain(ep), tx_entry);
+		rxr_prepare_desc_send(ep, tx_entry);
 }
 
 /*

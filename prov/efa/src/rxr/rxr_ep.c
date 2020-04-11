@@ -442,11 +442,15 @@ struct rxr_tx_entry *rxr_ep_alloc_tx_entry(struct rxr_ep *rxr_ep,
 	return tx_entry;
 }
 
-int rxr_ep_tx_init_mr_desc(struct rxr_domain *rxr_domain,
+int rxr_ep_tx_init_mr_desc(struct rxr_ep *rxr_ep,
 			   struct rxr_tx_entry *tx_entry,
 			   int mr_iov_start, uint64_t access)
 {
 	int i, err, ret;
+	struct rxr_peer *peer;
+
+	peer = rxr_ep_get_peer(rxr_ep, tx_entry->addr);
+	assert(peer);
 
 	ret = 0;
 	for (i = mr_iov_start; i < tx_entry->iov_count; ++i) {
@@ -455,11 +459,16 @@ int rxr_ep_tx_init_mr_desc(struct rxr_domain *rxr_domain,
 			continue;
 		}
 
-		err = fi_mr_reg(rxr_domain->rdm_domain,
-				tx_entry->iov[i].iov_base,
-				tx_entry->iov[i].iov_len,
-				access, 0, 0, 0,
-				&tx_entry->mr[i], NULL);
+		if (peer->is_local)
+			err = efa_mr_reg_shm(rxr_ep_domain(rxr_ep)->rdm_domain,
+					     tx_entry->iov + i,
+					     access, &tx_entry->mr[i]);
+		else
+			err = fi_mr_reg(rxr_ep_domain(rxr_ep)->rdm_domain,
+					tx_entry->iov[i].iov_base,
+					tx_entry->iov[i].iov_len,
+					access, 0, 0, 0,
+					&tx_entry->mr[i], NULL);
 		if (err) {
 			FI_WARN(&rxr_prov, FI_LOG_EP_CTRL,
 				"fi_mr_reg failed! buf: %p len: %ld access: %lx",
@@ -476,7 +485,7 @@ int rxr_ep_tx_init_mr_desc(struct rxr_domain *rxr_domain,
 	return ret;
 }
 
-void rxr_prepare_desc_send(struct rxr_domain *rxr_domain,
+void rxr_prepare_desc_send(struct rxr_ep *rxr_ep,
 			   struct rxr_tx_entry *tx_entry)
 {
 	size_t offset;
@@ -499,7 +508,7 @@ void rxr_prepare_desc_send(struct rxr_domain *rxr_domain,
 	 * because the long message protocol would work with or without
 	 * memory registration and descriptor.
 	 */
-	rxr_ep_tx_init_mr_desc(rxr_domain, tx_entry, index, FI_SEND);
+	rxr_ep_tx_init_mr_desc(rxr_ep, tx_entry, index, FI_SEND);
 }
 
 /* Generic send */

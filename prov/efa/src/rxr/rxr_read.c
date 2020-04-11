@@ -244,51 +244,15 @@ int rxr_read_init_iov(struct rxr_ep *ep,
 		      struct rxr_tx_entry *tx_entry,
 		      struct fi_rma_iov *read_iov)
 {
-	int i, err;
+	int i;
 	struct fid_mr *mr;
-	struct rxr_peer *peer;
-
-	peer = rxr_ep_get_peer(ep, tx_entry->addr);
-	assert(peer);
 
 	for (i = 0; i < tx_entry->iov_count; ++i) {
+		assert(tx_entry->desc[i]);
 		read_iov[i].addr = (uint64_t)tx_entry->iov[i].iov_base;
 		read_iov[i].len = tx_entry->iov[i].iov_len;
-	}
-
-	if (tx_entry->desc[0]) {
-		for (i = 0; i < tx_entry->iov_count; ++i) {
-			mr = (struct fid_mr *)tx_entry->desc[i];
-			read_iov[i].key = fi_mr_key(mr);
-		}
-	} else {
-		/* note mr could be been set by an unsucessful rxr_ep_post_ctrl */
-		if (!tx_entry->mr[0]) {
-			for (i = 0; i < tx_entry->iov_count; ++i) {
-				assert(!tx_entry->mr[i]);
-
-				if (peer->is_local)
-					err = efa_mr_reg_shm(rxr_ep_domain(ep)->rdm_domain,
-							     tx_entry->iov + i,
-							     FI_REMOTE_READ, &tx_entry->mr[i]);
-				else
-					err = fi_mr_regv(rxr_ep_domain(ep)->rdm_domain,
-							 tx_entry->iov + i, 1,
-							 FI_REMOTE_READ,
-							 0, 0, 0, &tx_entry->mr[i], NULL);
-				if (err) {
-					FI_WARN(&rxr_prov, FI_LOG_MR,
-						"Unable to register MR buf %p as FI_REMOTE_READ",
-						tx_entry->iov[i].iov_base);
-					return err;
-				}
-			}
-		}
-
-		for (i = 0; i < tx_entry->iov_count; ++i) {
-			assert(tx_entry->mr[i]);
-			read_iov[i].key = fi_mr_key(tx_entry->mr[i]);
-		}
+		mr = (struct fid_mr *)tx_entry->desc[i];
+		read_iov[i].key = fi_mr_key(mr);
 	}
 
 	return 0;

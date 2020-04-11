@@ -281,7 +281,7 @@ void rxr_pkt_handle_readrsp_sent(struct rxr_ep *ep, struct rxr_pkt_entry *pkt_en
 	if (tx_entry->bytes_sent < tx_entry->total_len) {
 		assert(!rxr_ep_is_cuda_mr(tx_entry->desc[0]));
 		if (efa_mr_cache_enable && rxr_ep_mr_local(ep))
-			rxr_prepare_desc_send(rxr_ep_domain(ep), tx_entry);
+			rxr_prepare_desc_send(ep, tx_entry);
 
 		tx_entry->state = RXR_TX_SEND;
 		dlist_insert_tail(&tx_entry->entry,

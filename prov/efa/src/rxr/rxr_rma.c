@@ -395,12 +395,12 @@ ssize_t rxr_rma_post_write(struct rxr_ep *ep, struct rxr_tx_entry *tx_entry)
 	if (tx_entry->total_len >= rxr_env.efa_max_long_write_size &&
 	    efa_both_support_rdma_read(ep, peer) &&
 	    (tx_entry->desc[0] || efa_mr_cache_enable)) {
-		err = rxr_pkt_post_ctrl_or_queue(ep, RXR_TX_ENTRY, tx_entry, RXR_READ_RTW_PKT, 0);
-		if (err != -FI_ENOMEM)
-			return err;
+		err = rxr_ep_tx_init_mr_desc(ep, tx_entry, 0, FI_REMOTE_READ);
+
+		if (!err)
+			return rxr_pkt_post_ctrl_or_queue(ep, RXR_TX_ENTRY, tx_entry, RXR_READ_RTW_PKT, 0);
 		/*
-		 * If read write protocol failed due to memory registration, fall back to use long
-		 * message protocol
+		 * If memory registration failed, fall back to use long write protocol
 		 */
 	}
 
