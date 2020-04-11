@@ -89,9 +89,9 @@ rxr_rma_alloc_readrsp_tx_entry(struct rxr_ep *rxr_ep,
 	dlist_insert_tail(&tx_entry->tx_entry_entry, &rxr_ep->tx_entry_list);
 #endif
 
-	msg.msg_iov = rx_entry->iov;
-	msg.iov_count = rx_entry->iov_count;
-	msg.addr = rx_entry->addr;
+	msg.msg_iov = rx_entry->base.iov;
+	msg.iov_count = rx_entry->base.iov_count;
+	msg.addr = rx_entry->base.addr;
 	msg.desc = NULL;
 	msg.context = NULL;
 	msg.data = 0;
@@ -102,20 +102,20 @@ rxr_rma_alloc_readrsp_tx_entry(struct rxr_ep *rxr_ep,
 	 */
 	rxr_tx_entry_init(rxr_ep, tx_entry, &msg, ofi_op_msg, 0);
 
-	tx_entry->cq_entry.flags |= FI_READ;
+	tx_entry->base.cq_entry.flags |= FI_READ;
 	/* rma_loc_rx_id is for later retrieve of rx_entry
 	 * to write rx_completion
 	 */
-	tx_entry->rma_loc_rx_id = rx_entry->rx_id;
+	tx_entry->rma_loc_rx_id = rx_entry->base.rx_id;
 
 	/* the following is essentially handle CTS */
-	tx_entry->rx_id = rx_entry->rma_initiator_rx_id;
+	tx_entry->base.rx_id = rx_entry->rma_initiator_rx_id;
 	tx_entry->window = rx_entry->window;
 
 	/* this tx_entry does not send request
 	 * therefore should not increase msg_id
 	 */
-	tx_entry->msg_id = 0;
+	tx_entry->base.msg_id = 0;
 	return tx_entry;
 }
 
@@ -144,8 +144,8 @@ rxr_rma_alloc_tx_entry(struct rxr_ep *rxr_ep,
 
 	assert(msg_rma->rma_iov_count > 0);
 	assert(msg_rma->rma_iov);
-	tx_entry->rma_iov_count = msg_rma->rma_iov_count;
-	memcpy(tx_entry->rma_iov, msg_rma->rma_iov,
+	tx_entry->base.rma_iov_count = msg_rma->rma_iov_count;
+	memcpy(tx_entry->base.rma_iov, msg_rma->rma_iov,
 	       sizeof(struct fi_rma_iov) * msg_rma->rma_iov_count);
 
 #if ENABLE_DEBUG
@@ -161,8 +161,8 @@ size_t rxr_rma_post_shm_write(struct rxr_ep *rxr_ep, struct rxr_tx_entry *tx_ent
 	struct rxr_peer *peer;
 	int i, err;
 
-	assert(tx_entry->op == ofi_op_write);
-	peer = rxr_ep_get_peer(rxr_ep, tx_entry->addr);
+	assert(tx_entry->base.op == ofi_op_write);
+	peer = rxr_ep_get_peer(rxr_ep, tx_entry->base.addr);
 	pkt_entry = rxr_pkt_entry_alloc(rxr_ep, rxr_ep->tx_pkt_shm_pool);
 	if (OFI_UNLIKELY(!pkt_entry))
 		return -FI_EAGAIN;
@@ -171,19 +171,19 @@ size_t rxr_rma_post_shm_write(struct rxr_ep *rxr_ep, struct rxr_tx_entry *tx_ent
 
 	/* If no FI_MR_VIRT_ADDR being set, have to use 0-based offset */
 	if (!(shm_info->domain_attr->mr_mode & FI_MR_VIRT_ADDR)) {
-		for (i = 0; i < tx_entry->iov_count; i++)
-			tx_entry->rma_iov[i].addr = 0;
+		for (i = 0; i < tx_entry->base.iov_count; i++)
+			tx_entry->base.rma_iov[i].addr = 0;
 	}
 
-	msg.msg_iov = tx_entry->iov;
-	msg.iov_count = tx_entry->iov_count;
+	msg.msg_iov = tx_entry->base.iov;
+	msg.iov_count = tx_entry->base.iov_count;
 	msg.addr = peer->shm_fiaddr;
-	msg.rma_iov = tx_entry->rma_iov;
-	msg.rma_iov_count = tx_entry->rma_iov_count;
+	msg.rma_iov = tx_entry->base.rma_iov;
+	msg.rma_iov_count = tx_entry->base.rma_iov_count;
 	msg.context = pkt_entry;
-	msg.data = tx_entry->cq_entry.data;
+	msg.data = tx_entry->base.cq_entry.data;
 
-	err = fi_writemsg(rxr_ep->shm_ep, &msg, tx_entry->fi_flags);
+	err = fi_writemsg(rxr_ep->shm_ep, &msg, tx_entry->base.fi_flags);
 	if (err)
 		rxr_pkt_entry_release_tx(rxr_ep, pkt_entry);
 
@@ -202,9 +202,9 @@ ssize_t rxr_rma_post_efa_emulated_read(struct rxr_ep *ep, struct rxr_tx_entry *t
 	 * use ofi_op_msg for its op.
 	 * it does not write a rx completion.
 	 */
-	msg.msg_iov = tx_entry->iov;
-	msg.iov_count = tx_entry->iov_count;
-	msg.addr = tx_entry->addr;
+	msg.msg_iov = tx_entry->base.iov;
+	msg.iov_count = tx_entry->base.iov_count;
+	msg.addr = tx_entry->base.addr;
 	rx_entry = rxr_ep_get_rx_entry(ep, &msg, 0, ~0, ofi_op_msg, 0);
 	if (!rx_entry) {
 		rxr_release_tx_entry(ep, tx_entry);
@@ -221,9 +221,9 @@ ssize_t rxr_rma_post_efa_emulated_read(struct rxr_ep *ep, struct rxr_tx_entry *t
 	 * rxr_cq_handle_readrsp()
 	 */
 	assert(rx_entry);
-	rx_entry->tx_id = -1;
-	rx_entry->cq_entry.flags |= FI_READ;
-	rx_entry->total_len = rx_entry->cq_entry.len;
+	rx_entry->base.tx_id = -1;
+	rx_entry->base.cq_entry.flags |= FI_READ;
+	rx_entry->base.total_len = rx_entry->base.cq_entry.len;
 
 	/*
 	 * there will not be a CTS for fi_read, we calculate CTS
@@ -246,7 +246,7 @@ ssize_t rxr_rma_post_efa_emulated_read(struct rxr_ep *ep, struct rxr_tx_entry *t
 	/* rma_loc_tx_id is used in rxr_cq_handle_rx_completion()
 	 * to locate the tx_entry for tx completion.
 	 */
-	rx_entry->rma_loc_tx_id = tx_entry->tx_id;
+	rx_entry->rma_loc_tx_id = tx_entry->base.tx_id;
 #if ENABLE_DEBUG
 	dlist_insert_tail(&rx_entry->rx_pending_entry,
 			  &ep->rx_pending_list);
@@ -258,15 +258,15 @@ ssize_t rxr_rma_post_efa_emulated_read(struct rxr_ep *ep, struct rxr_tx_entry *t
 	 * the rma_loc_rx_id and rma_window will be sent to remote EP
 	 * via REQ
 	 */
-	tx_entry->rma_loc_rx_id = rx_entry->rx_id;
+	tx_entry->rma_loc_rx_id = rx_entry->base.rx_id;
 
-	if (tx_entry->total_len < ep->mtu_size - sizeof(struct rxr_readrsp_hdr)) {
+	if (tx_entry->base.total_len < ep->mtu_size - sizeof(struct rxr_readrsp_hdr)) {
 		err = rxr_pkt_post_ctrl_or_queue(ep, RXR_TX_ENTRY, tx_entry, RXR_SHORT_RTR_PKT, 0);
 	} else {
-		peer = rxr_ep_get_peer(ep, tx_entry->addr);
+		peer = rxr_ep_get_peer(ep, tx_entry->base.addr);
 		assert(peer);
 		rxr_pkt_calc_cts_window_credits(ep, peer,
-						tx_entry->total_len,
+						tx_entry->base.total_len,
 						tx_entry->credit_request,
 						&window,
 						&credits);
@@ -315,7 +315,7 @@ ssize_t rxr_rma_readmsg(struct fid_ep *ep, const struct fi_msg_rma *msg, uint64_
 	if (rxr_env.enable_shm_transfer && peer->is_local) {
 		use_lower_ep_read = true;
 	} else if (efa_both_support_rdma_read(rxr_ep, peer) &&
-		   tx_entry->total_len >= rxr_env.efa_max_emulated_read_size) {
+		   tx_entry->base.total_len >= rxr_env.efa_max_emulated_read_size) {
 		use_lower_ep_read = true;
 	}
 
@@ -383,18 +383,18 @@ ssize_t rxr_rma_post_write(struct rxr_ep *ep, struct rxr_tx_entry *tx_entry)
 	ssize_t err;
 	struct rxr_peer *peer;
 
-	peer = rxr_ep_get_peer(ep, tx_entry->addr);
+	peer = rxr_ep_get_peer(ep, tx_entry->base.addr);
 	assert(peer);
 	if (peer->is_local)
 		return rxr_rma_post_shm_write(ep, tx_entry);
 
 	/* Inter instance */
-	if (tx_entry->total_len < rxr_pkt_req_max_data_size(ep, tx_entry->addr, RXR_EAGER_RTW_PKT))
+	if (tx_entry->base.total_len < rxr_pkt_req_max_data_size(ep, tx_entry->base.addr, RXR_EAGER_RTW_PKT))
 		return rxr_pkt_post_ctrl_or_queue(ep, RXR_TX_ENTRY, tx_entry, RXR_EAGER_RTW_PKT, 0);
 
-	if (tx_entry->total_len >= rxr_env.efa_max_long_write_size &&
+	if (tx_entry->base.total_len >= rxr_env.efa_max_long_write_size &&
 	    efa_both_support_rdma_read(ep, peer) &&
-	    (tx_entry->desc[0] || efa_mr_cache_enable)) {
+	    (tx_entry->base.desc[0] || efa_mr_cache_enable)) {
 		err = rxr_ep_tx_init_mr_desc(ep, tx_entry, 0, FI_REMOTE_READ);
 
 		if (!err)

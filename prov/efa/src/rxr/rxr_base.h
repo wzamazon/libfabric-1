@@ -325,60 +325,32 @@ struct rxr_atomic_ex {
 
 struct rxr_x_entry {
 	enum rxr_x_entry_type type;
-
+	uint32_t op;
 	fi_addr_t addr;
-
-	/*
-	 * freestack ids used to lookup rx_entry during pkt recv
-	 */
 	uint32_t tx_id;
 	uint32_t rx_id;
-	uint32_t op;
-
-
 	uint32_t msg_id;
-
 	uint64_t tag;
 	uint64_t ignore;
-
-	uint64_t total_len;
-
-	struct rxr_atomic_hdr atomic_hdr;
 	struct rxr_queued_ctrl_info queued_ctrl;
-	uint64_t fi_flags;
 
-	/* App proivde iov and desc*/
 	size_t iov_count;
 	struct iovec iov[RXR_IOV_LIMIT];
-	void *desc[RXR_IOV_LIMIT];
+	void *desc[RXR_IOV_LIMIT];  /* App-provided reg descriptor */
 
-	/* If app did not provide desc, we need to do memory registration
- 	 * and store result in mr.
- 	 */
-	struct fid_mr *mr[RXR_IOV_LIMIT];
-
-	/* In tx_entry, rma_iov_count and rma_iov are used by RMA operations,
-	 * and is provided by app.
-	 * In rx_entry, rma_iov_count and rma_iov are used by read msg/write protocol, and is recevied over wire.
-	 */
 	size_t rma_iov_count;
 	struct fi_rma_iov rma_iov[RXR_IOV_LIMIT];
 
-	struct fi_cq_tagged_entry cq_entry;
+	uint64_t total_len;
+	size_t bytes_submitted; /* bytes fi_read()/fi_send() succeeeded */
+	size_t bytes_completed; /* bytes send/read/received after get CQ entry */
+	uint64_t fi_flags;
+	uint16_t rxr_flags;
+	
+	struct dlist_entry entry; /* entry is linked with rx entry lists in rxr_ep */
+	struct dlist_entry queued_entry; /* queued_entry is linked with rx_queued_ctrl_list in rxr_ep */
 
-	/* 
-	 * For tx_entry, entry is linked with tx_pending_list in rxr_ep
-	 * For rx_entry, entry is linked with rx_list in rxr_ep
-	 */
-	struct dlist_entry entry;
-
-	/* For tx_entry, queued_entry is linked with tx_queued_ctrl_list in rxr_ep,
- 	 * For rx_entry, queued_entry is linked with rx_queued_ctrl_list in rxr_ep
- 	 */
-	struct dlist_entry queued_entry;
-
-	/* Queued packets due to TX queue full or RNR backoff */
-	struct dlist_entry queued_pkts;
+	struct dlist_entry queued_pkts; /* Queued packets due to TX queue full or RNR backoff */
 };
 
 struct rxr_rx_entry {
@@ -391,14 +363,14 @@ struct rxr_rx_entry {
 	uint32_t rma_loc_tx_id;
 	uint32_t rma_initiator_rx_id;
 
-	uint64_t bytes_done;
+	struct rxr_atomic_hdr atomic_hdr;
+
 	int64_t window;
 	uint16_t credit_request;
 	int credit_cts;
 
 	enum rxr_rx_comm_type state;
-
-	uint16_t rxr_flags;
+	struct fi_cq_tagged_entry cq_entry;
 
 	/*
 	 * A list of rx_entries tracking FI_MULTI_RECV buffers. An rx_entry of
@@ -425,7 +397,7 @@ struct rxr_rx_entry {
 
 struct rxr_tx_entry {
 	/* Must remain at the top */
-	struct rxr_x_entry base;
+	enum rxr_x_entry base;
 
 	uint64_t bytes_acked;
 	uint64_t bytes_sent;
@@ -433,19 +405,42 @@ struct rxr_tx_entry {
 	uint16_t credit_request;
 	uint16_t credit_allocated;
 
+	uint64_t total_len;
+
 	enum rxr_tx_comm_type state;
 
+	uint64_t fi_flags;
 	uint64_t send_flags;
 	size_t iov_index;
 	size_t iov_offset;
+	struct iovec iov[RXR_IOV_LIMIT];
 
 	uint64_t rma_loc_rx_id;
 	uint64_t rma_window;
+	size_t rma_iov_count;
+	struct fi_rma_iov rma_iov[RXR_IOV_LIMIT];
 
+	/* App-provided reg descriptor */
+	void *desc[RXR_IOV_LIMIT];
+
+	/* atomic related variables */
+	struct rxr_atomic_hdr atomic_hdr;
 	struct rxr_atomic_ex atomic_ex;
 
 	/* Only used with mr threshold switch from memcpy */
 	size_t iov_mr_start;
+	struct fid_mr *mr[RXR_IOV_LIMIT];
+
+	struct fi_cq_tagged_entry cq_entry;
+
+	/* entry is linked with tx_pending_list in rxr_ep */
+	struct dlist_entry entry;
+
+	/* queued_entry is linked with tx_queued_ctrl_list in rxr_ep */
+	struct dlist_entry queued_entry;
+
+	/* Queued packets due to TX queue full or RNR backoff */
+	struct dlist_entry queued_pkts;
 
 #if ENABLE_DEBUG
 	/* linked with tx_entry_list in rxr_ep */

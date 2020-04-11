@@ -58,7 +58,7 @@ ssize_t rxr_pkt_post_data(struct rxr_ep *rxr_ep,
 		return -FI_ENOMEM;
 
 	pkt_entry->x_entry = (void *)tx_entry;
-	pkt_entry->addr = tx_entry->addr;
+	pkt_entry->addr = tx_entry->base.addr;
 
 	data_pkt = (struct rxr_data_pkt *)pkt_entry->pkt;
 
@@ -66,7 +66,7 @@ ssize_t rxr_pkt_post_data(struct rxr_ep *rxr_ep,
 	data_pkt->hdr.version = RXR_BASE_PROTOCOL_VERSION;
 	data_pkt->hdr.flags = 0;
 
-	data_pkt->hdr.rx_id = tx_entry->rx_id;
+	data_pkt->hdr.rx_id = tx_entry->base.rx_id;
 
 	/*
 	 * Data packets are sent in order so using bytes_sent is okay here.
@@ -80,7 +80,7 @@ ssize_t rxr_pkt_post_data(struct rxr_ep *rxr_ep,
 	 * For now, always send CUDA buffers through
 	 * rxr_pkt_send_data_desc().
 	 */
-	if (efa_mr_cache_enable || rxr_ep_is_cuda_mr(tx_entry->desc[0]))
+	if (efa_mr_cache_enable || rxr_ep_is_cuda_mr(tx_entry->base.desc[0]))
 		ret = rxr_pkt_send_data_desc(rxr_ep, tx_entry, pkt_entry);
 	else
 		ret = rxr_pkt_send_data(rxr_ep, tx_entry, pkt_entry);
@@ -250,10 +250,10 @@ ssize_t rxr_pkt_post_ctrl_once(struct rxr_ep *rxr_ep, int entry_type, void *x_en
 
 	if (entry_type == RXR_TX_ENTRY) {
 		tx_entry = (struct rxr_tx_entry *)x_entry;
-		addr = tx_entry->addr;
+		addr = tx_entry->base.addr;
 	} else {
 		rx_entry = (struct rxr_rx_entry *)x_entry;
-		addr = rx_entry->addr;
+		addr = rx_entry->base.addr;
 	}
 
 	peer = rxr_ep_get_peer(rxr_ep, addr);
@@ -308,7 +308,7 @@ ssize_t rxr_pkt_post_ctrl(struct rxr_ep *ep, int entry_type, void *x_entry,
 		assert(!inject);
 
 		tx_entry = (struct rxr_tx_entry *)x_entry;
-		while (tx_entry->bytes_sent < tx_entry->total_len) {
+		while (tx_entry->bytes_sent < tx_entry->base.total_len) {
 			err = rxr_pkt_post_ctrl_once(ep, RXR_TX_ENTRY, x_entry, ctrl_type, 0);
 			if (OFI_UNLIKELY(err))
 				return err;
@@ -331,17 +331,17 @@ ssize_t rxr_pkt_post_ctrl_or_queue(struct rxr_ep *ep, int entry_type, void *x_en
 		if (entry_type == RXR_TX_ENTRY) {
 			tx_entry = (struct rxr_tx_entry *)x_entry;
 			tx_entry->state = RXR_TX_QUEUED_CTRL;
-			tx_entry->queued_ctrl.type = ctrl_type;
-			tx_entry->queued_ctrl.inject = inject;
-			dlist_insert_tail(&tx_entry->queued_entry,
+			tx_entry->base.queued_ctrl.type = ctrl_type;
+			tx_entry->base.queued_ctrl.inject = inject;
+			dlist_insert_tail(&tx_entry->base.queued_entry,
 					  &ep->tx_entry_queued_list);
 		} else {
 			assert(entry_type == RXR_RX_ENTRY);
 			rx_entry = (struct rxr_rx_entry *)x_entry;
 			rx_entry->state = RXR_RX_QUEUED_CTRL;
-			rx_entry->queued_ctrl.type = ctrl_type;
-			rx_entry->queued_ctrl.inject = inject;
-			dlist_insert_tail(&rx_entry->queued_entry,
+			rx_entry->base.queued_ctrl.type = ctrl_type;
+			rx_entry->base.queued_ctrl.inject = inject;
+			dlist_insert_tail(&rx_entry->base.queued_entry,
 					  &ep->rx_entry_queued_list);
 		}
 

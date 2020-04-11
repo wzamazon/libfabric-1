@@ -74,29 +74,29 @@ ssize_t rxr_msg_post_rtm(struct rxr_ep *rxr_ep, struct rxr_tx_entry *tx_entry)
 	ssize_t err;
 	struct rxr_peer *peer;
 
-	assert(tx_entry->op == ofi_op_msg || tx_entry->op == ofi_op_tagged);
-	tagged = (tx_entry->op == ofi_op_tagged);
+	assert(tx_entry->base.op == ofi_op_msg || tx_entry->base.op == ofi_op_tagged);
+	tagged = (tx_entry->base.op == ofi_op_tagged);
 	assert(tagged == 0 || tagged == 1);
 
 	max_rtm_data_size = rxr_pkt_req_max_data_size(rxr_ep,
-						      tx_entry->addr,
+						      tx_entry->base.addr,
 						      RXR_EAGER_MSGRTM_PKT + tagged);
 
-	peer = rxr_ep_get_peer(rxr_ep, tx_entry->addr);
+	peer = rxr_ep_get_peer(rxr_ep, tx_entry->base.addr);
 	if (peer->is_local) {
 		/* intra instance message */
-		int rtm_type = (tx_entry->total_len <= max_rtm_data_size) ? RXR_EAGER_MSGRTM_PKT
+		int rtm_type = (tx_entry->base.total_len <= max_rtm_data_size) ? RXR_EAGER_MSGRTM_PKT
 									  : RXR_READ_MSGRTM_PKT;
 
 		return rxr_pkt_post_ctrl_or_queue(rxr_ep, RXR_TX_ENTRY, tx_entry, rtm_type + tagged, 0);
 	}
 
 	/* inter instance message */
-	if (tx_entry->total_len <= max_rtm_data_size)
+	if (tx_entry->base.total_len <= max_rtm_data_size)
 		return rxr_pkt_post_ctrl_or_queue(rxr_ep, RXR_TX_ENTRY, tx_entry,
 						  RXR_EAGER_MSGRTM_PKT + tagged, 0);
 
-	if (tx_entry->total_len <= rxr_env.efa_max_medium_msg_size) {
+	if (tx_entry->base.total_len <= rxr_env.efa_max_medium_msg_size) {
 		/* we do not check the return value of rxr_ep_init_mr_desc()
 		 * because medium message works even if MR registration failed
 		 */
@@ -107,8 +107,8 @@ ssize_t rxr_msg_post_rtm(struct rxr_ep *rxr_ep, struct rxr_tx_entry *tx_entry)
 	}
 
 	if (efa_both_support_rdma_read(rxr_ep, peer) &&
-	    tx_entry->total_len > rxr_env.efa_max_long_msg_size &&
-	    (tx_entry->desc[0] || efa_mr_cache_enable)) {
+	    tx_entry->base.total_len > rxr_env.efa_max_long_msg_size &&
+	    (tx_entry->base.desc[0] || efa_mr_cache_enable)) {
 		/* use read message protocol */
 		err = rxr_ep_tx_init_mr_desc(rxr_ep, tx_entry, 0, FI_REMOTE_READ);
 
@@ -159,11 +159,11 @@ ssize_t rxr_msg_generic_send(struct fid_ep *ep, const struct fi_msg *msg,
 		goto out;
 	}
 
-	assert(tx_entry->op == ofi_op_msg || tx_entry->op == ofi_op_tagged);
+	assert(tx_entry->base.op == ofi_op_msg || tx_entry->base.op == ofi_op_tagged);
 
-	peer = rxr_ep_get_peer(rxr_ep, tx_entry->addr);
+	peer = rxr_ep_get_peer(rxr_ep, tx_entry->base.addr);
 	assert(peer);
-	tx_entry->msg_id = peer->next_msg_id++;
+	tx_entry->base.msg_id = peer->next_msg_id++;
 	err = rxr_msg_post_rtm(rxr_ep, tx_entry);
 	if (OFI_UNLIKELY(err)) {
 		rxr_release_tx_entry(rxr_ep, tx_entry);
@@ -454,9 +454,9 @@ int rxr_msg_match_unexp(struct dlist_entry *item, const void *arg)
 	const struct rxr_match_info *match_info = arg;
 	struct rxr_rx_entry *rx_entry;
 
-	rx_entry = container_of(item, struct rxr_rx_entry, entry);
+	rx_entry = container_of(item, struct rxr_rx_entry, base.entry);
 
-	return rxr_match_addr(match_info->addr, rx_entry->addr);
+	return rxr_match_addr(match_info->addr, rx_entry->base.addr);
 }
 
 static
@@ -465,9 +465,9 @@ int rxr_msg_match_unexp_tagged_anyaddr(struct dlist_entry *item, const void *arg
 	const struct rxr_match_info *match_info = arg;
 	struct rxr_rx_entry *rx_entry;
 
-	rx_entry = container_of(item, struct rxr_rx_entry, entry);
+	rx_entry = container_of(item, struct rxr_rx_entry, base.entry);
 
-	return rxr_match_tag(rx_entry->tag, match_info->ignore,
+	return rxr_match_tag(rx_entry->base.tag, match_info->ignore,
 			     match_info->tag);
 }
 
@@ -477,10 +477,10 @@ int rxr_msg_match_unexp_tagged(struct dlist_entry *item, const void *arg)
 	const struct rxr_match_info *match_info = arg;
 	struct rxr_rx_entry *rx_entry;
 
-	rx_entry = container_of(item, struct rxr_rx_entry, entry);
+	rx_entry = container_of(item, struct rxr_rx_entry, base.entry);
 
-	return rxr_match_addr(match_info->addr, rx_entry->addr) &&
-	       rxr_match_tag(rx_entry->tag, match_info->ignore,
+	return rxr_match_addr(match_info->addr, rx_entry->base.addr) &&
+	       rxr_match_tag(rx_entry->base.tag, match_info->ignore,
 			     match_info->tag);
 }
 
@@ -494,38 +494,38 @@ int rxr_msg_handle_unexp_match(struct rxr_ep *ep,
 	struct rxr_pkt_entry *pkt_entry;
 	uint64_t data_len;
 
-	rx_entry->fi_flags = flags;
-	rx_entry->ignore = ignore;
+	rx_entry->base.fi_flags = flags;
+	rx_entry->base.ignore = ignore;
 	rx_entry->state = RXR_RX_MATCHED;
 
 	pkt_entry = rx_entry->unexp_pkt;
 	rx_entry->unexp_pkt = NULL;
 	data_len = rxr_pkt_rtm_total_len(pkt_entry);
 
-	rx_entry->cq_entry.op_context = context;
+	rx_entry->base.cq_entry.op_context = context;
 	/*
 	 * we don't expect recv buf from application for discard,
 	 * hence setting to NULL
 	 */
 	if (OFI_UNLIKELY(flags & FI_DISCARD)) {
-		rx_entry->cq_entry.buf = NULL;
-		rx_entry->cq_entry.len = data_len;
+		rx_entry->base.cq_entry.buf = NULL;
+		rx_entry->base.cq_entry.len = data_len;
 	} else {
-		rx_entry->cq_entry.buf = rx_entry->iov[0].iov_base;
-		data_len = MIN(rx_entry->total_len,
-			       ofi_total_iov_len(rx_entry->iov, rx_entry->iov_count));
-		rx_entry->cq_entry.len = data_len;
+		rx_entry->base.cq_entry.buf = rx_entry->base.iov[0].iov_base;
+		data_len = MIN(rx_entry->base.total_len,
+			       ofi_total_iov_len(rx_entry->base.iov, rx_entry->base.iov_count));
+		rx_entry->base.cq_entry.len = data_len;
 	}
 
-	rx_entry->cq_entry.flags = (FI_RECV | FI_MSG);
+	rx_entry->base.cq_entry.flags = (FI_RECV | FI_MSG);
 
 	if (op == ofi_op_tagged) {
-		rx_entry->cq_entry.flags |= FI_TAGGED;
-		rx_entry->cq_entry.tag = rx_entry->tag;
-		rx_entry->ignore = ignore;
+		rx_entry->base.cq_entry.flags |= FI_TAGGED;
+		rx_entry->base.cq_entry.tag = rx_entry->base.tag;
+		rx_entry->base.ignore = ignore;
 	} else {
-		rx_entry->cq_entry.tag = 0;
-		rx_entry->ignore = ~0;
+		rx_entry->base.cq_entry.tag = 0;
+		rx_entry->base.ignore = ~0;
 	}
 
 	return rxr_pkt_proc_matched_rtm(ep, rx_entry, pkt_entry);
@@ -573,7 +573,7 @@ int rxr_msg_proc_unexp_msg_list(struct rxr_ep *ep, const struct fi_msg *msg,
 	if (!match)
 		return -FI_ENOMSG;
 
-	rx_entry = container_of(match, struct rxr_rx_entry, entry);
+	rx_entry = container_of(match, struct rxr_rx_entry, base.entry);
 
 	/*
 	 * Initialize the matched entry as a multi-recv consumer if the posted
@@ -591,17 +591,17 @@ int rxr_msg_proc_unexp_msg_list(struct rxr_ep *ep, const struct fi_msg *msg,
 			return -FI_ENOBUFS;
 		}
 	} else {
-		memcpy(rx_entry->iov, msg->msg_iov, sizeof(*rx_entry->iov) * msg->iov_count);
-		rx_entry->iov_count = msg->iov_count;
+		memcpy(rx_entry->base.iov, msg->msg_iov, sizeof(*rx_entry->base.iov) * msg->iov_count);
+		rx_entry->base.iov_count = msg->iov_count;
 	}
 
 	if (msg->desc)
-		memcpy(rx_entry->desc, msg->desc, sizeof(void*) * msg->iov_count);
+		memcpy(rx_entry->base.desc, msg->desc, sizeof(void*) * msg->iov_count);
 
 	FI_DBG(&rxr_prov, FI_LOG_EP_CTRL,
 	       "Match found in unexp list for a posted recv msg_id: %" PRIu32
 	       " total_len: %" PRIu64 " tag: %lx\n",
-	       rx_entry->msg_id, rx_entry->total_len, rx_entry->tag);
+	       rx_entry->base.msg_id, rx_entry->base.total_len, rx_entry->base.tag);
 
 	ret = rxr_msg_handle_unexp_match(ep, rx_entry, tag, ignore,
 					 msg->context, msg->addr, op, flags);
@@ -611,10 +611,10 @@ int rxr_msg_proc_unexp_msg_list(struct rxr_ep *ep, const struct fi_msg *msg,
 bool rxr_msg_multi_recv_buffer_available(struct rxr_ep *ep,
 					 struct rxr_rx_entry *rx_entry)
 {
-	assert(rx_entry->fi_flags & FI_MULTI_RECV);
+	assert(rx_entry->base.fi_flags & FI_MULTI_RECV);
 	assert(rx_entry->rxr_flags & RXR_MULTI_RECV_POSTED);
 
-	return (ofi_total_iov_len(rx_entry->iov, rx_entry->iov_count)
+	return (ofi_total_iov_len(rx_entry->base.iov, rx_entry->base.iov_count)
 		>= ep->min_multi_recv_size);
 }
 
@@ -622,7 +622,7 @@ static inline
 bool rxr_msg_multi_recv_buffer_complete(struct rxr_ep *ep,
 					struct rxr_rx_entry *rx_entry)
 {
-	assert(rx_entry->fi_flags & FI_MULTI_RECV);
+	assert(rx_entry->base.fi_flags & FI_MULTI_RECV);
 	assert(rx_entry->rxr_flags & RXR_MULTI_RECV_POSTED);
 
 	return (!rxr_msg_multi_recv_buffer_available(ep, rx_entry) &&
@@ -701,7 +701,7 @@ ssize_t rxr_msg_multi_recv(struct rxr_ep *rxr_ep, const struct fi_msg *msg,
 			break;
 	}
 
-	dlist_insert_tail(&rx_entry->entry, &rxr_ep->rx_list);
+	dlist_insert_tail(&rx_entry->base.entry, &rxr_ep->rx_list);
 	return ret;
 }
 
@@ -721,7 +721,7 @@ void rxr_msg_multi_recv_handle_completion(struct rxr_ep *ep,
 	 * Buffer is consumed and all messages have been received. Update the
 	 * last message to release the application buffer.
 	 */
-	rx_entry->cq_entry.flags |= FI_MULTI_RECV;
+	rx_entry->base.cq_entry.flags |= FI_MULTI_RECV;
 }
 
 /*
@@ -789,9 +789,9 @@ ssize_t rxr_msg_generic_recv(struct fid_ep *ep, const struct fi_msg *msg,
 	}
 
 	if (op == ofi_op_tagged)
-		dlist_insert_tail(&rx_entry->entry, &rxr_ep->rx_tagged_list);
+		dlist_insert_tail(&rx_entry->base.entry, &rxr_ep->rx_tagged_list);
 	else
-		dlist_insert_tail(&rx_entry->entry, &rxr_ep->rx_list);
+		dlist_insert_tail(&rx_entry->base.entry, &rxr_ep->rx_list);
 
 out:
 	fastlock_release(&rxr_ep->util_ep.lock);
@@ -811,12 +811,12 @@ ssize_t rxr_msg_discard_trecv(struct rxr_ep *ep,
 	if ((flags & FI_DISCARD) && !(flags & (FI_PEEK | FI_CLAIM)))
 		return -FI_EINVAL;
 
-	rx_entry->fi_flags |= FI_DISCARD;
+	rx_entry->base.fi_flags |= FI_DISCARD;
 	rx_entry->rxr_flags |= RXR_RECV_CANCEL;
 	ret = ofi_cq_write(ep->util_ep.rx_cq, msg->context,
 			   FI_TAGGED | FI_RECV | FI_MSG,
-			   0, NULL, rx_entry->cq_entry.data,
-			   rx_entry->cq_entry.tag);
+			   0, NULL, rx_entry->base.cq_entry.data,
+			   rx_entry->base.cq_entry.tag);
 	rxr_rm_rx_cq_check(ep, ep->util_ep.rx_cq);
 	return ret;
 }
@@ -847,9 +847,9 @@ ssize_t rxr_msg_claim_trecv(struct fid_ep *ep_fid,
 	 * Handle unexp match entry even for discard entry as we are sinking
 	 * messages for that case
 	 */
-	memcpy(rx_entry->iov, msg->msg_iov,
+	memcpy(rx_entry->base.iov, msg->msg_iov,
 	       sizeof(*msg->msg_iov) * msg->iov_count);
-	rx_entry->iov_count = msg->iov_count;
+	rx_entry->base.iov_count = msg->iov_count;
 
 	ret = rxr_msg_handle_unexp_match(ep, rx_entry, msg->tag,
 					 msg->ignore, msg->context,
@@ -903,7 +903,7 @@ ssize_t rxr_msg_peek_trecv(struct fid_ep *ep_fid,
 		goto out;
 	}
 
-	rx_entry = container_of(match, struct rxr_rx_entry, entry);
+	rx_entry = container_of(match, struct rxr_rx_entry, base.entry);
 	context = (struct fi_context *)msg->context;
 	if (flags & FI_CLAIM) {
 		context->internal[0] = rx_entry;
@@ -915,9 +915,9 @@ ssize_t rxr_msg_peek_trecv(struct fid_ep *ep_fid,
 		if (ret)
 			goto out;
 
-		memcpy(rx_entry->iov, msg->msg_iov,
+		memcpy(rx_entry->base.iov, msg->msg_iov,
 		       sizeof(*msg->msg_iov) * msg->iov_count);
-		rx_entry->iov_count = msg->iov_count;
+		rx_entry->base.iov_count = msg->iov_count;
 
 		ret = rxr_msg_handle_unexp_match(ep, rx_entry,
 						 msg->tag, msg->ignore,
@@ -935,13 +935,13 @@ ssize_t rxr_msg_peek_trecv(struct fid_ep *ep_fid,
 		ret = ofi_cq_write_src(ep->util_ep.rx_cq, context,
 				       FI_TAGGED | FI_RECV,
 				       data_len, NULL,
-				       rx_entry->cq_entry.data, tag,
-				       rx_entry->addr);
+				       rx_entry->base.cq_entry.data, tag,
+				       rx_entry->base.addr);
 	else
 		ret = ofi_cq_write(ep->util_ep.rx_cq, context,
 				   FI_TAGGED | FI_RECV,
 				   data_len, NULL,
-				   rx_entry->cq_entry.data, tag);
+				   rx_entry->base.cq_entry.data, tag);
 	rxr_rm_rx_cq_check(ep, ep->util_ep.rx_cq);
 out:
 	fastlock_release(&ep->util_ep.lock);

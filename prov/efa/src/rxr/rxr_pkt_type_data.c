@@ -53,9 +53,9 @@ ssize_t rxr_pkt_send_data(struct rxr_ep *ep,
 	struct rxr_data_pkt *data_pkt;
 
 	pkt_entry->x_entry = (void *)tx_entry;
-	pkt_entry->addr = tx_entry->addr;
+	pkt_entry->addr = tx_entry->base.addr;
 
-	payload_size = MIN(tx_entry->total_len - tx_entry->bytes_sent,
+	payload_size = MIN(tx_entry->base.total_len - tx_entry->bytes_sent,
 			   ep->max_data_payload_size);
 	payload_size = MIN(payload_size, tx_entry->window);
 
@@ -66,7 +66,7 @@ ssize_t rxr_pkt_send_data(struct rxr_ep *ep,
 	assert(copied_size == payload_size);
 
 	pkt_entry->pkt_size = copied_size + sizeof(struct rxr_data_hdr);
-	pkt_entry->addr = tx_entry->addr;
+	pkt_entry->addr = tx_entry->base.addr;
 
 	return rxr_pkt_entry_send_with_flags(ep, pkt_entry, pkt_entry->addr,
 					     tx_entry->send_flags);
@@ -80,13 +80,13 @@ ssize_t rxr_pkt_send_data(struct rxr_ep *ep,
 static size_t rxr_copy_from_iov(void *buf, uint64_t remaining_len,
 				struct rxr_tx_entry *tx_entry)
 {
-	struct iovec *tx_iov = tx_entry->iov;
+	struct iovec *tx_iov = tx_entry->base.iov;
 	uint64_t done = 0, len;
 
-	while (tx_entry->iov_index < tx_entry->iov_count &&
+	while (tx_entry->iov_index < tx_entry->base.iov_count &&
 	       done < remaining_len) {
 		len = tx_iov[tx_entry->iov_index].iov_len;
-		if (tx_entry->mr[tx_entry->iov_index])
+		if (tx_entry->base.mr[tx_entry->iov_index])
 			break;
 
 		len -= tx_entry->iov_offset;
@@ -121,7 +121,7 @@ ssize_t rxr_pkt_send_data_desc(struct rxr_ep *ep,
 {
 	struct rxr_data_pkt *data_pkt;
 	/* The user's iov */
-	struct iovec *tx_iov = tx_entry->iov;
+	struct iovec *tx_iov = tx_entry->base.iov;
 	/* The constructed iov to be passed to sendv
 	 * and corresponding fid_mrs
 	 */
@@ -153,14 +153,14 @@ ssize_t rxr_pkt_send_data_desc(struct rxr_ep *ep,
 	 * entry window is exhausted.  Each iteration fills one entry of the
 	 * iov to be sent.
 	 */
-	while (tx_entry->iov_index < tx_entry->iov_count &&
+	while (tx_entry->iov_index < tx_entry->base.iov_count &&
 	       remaining_len > 0 && i < ep->core_iov_limit) {
-		if (!rxr_ep_mr_local(ep) || tx_entry->desc[tx_entry->iov_index]) {
+		if (!rxr_ep_mr_local(ep) || tx_entry->base.desc[tx_entry->iov_index]) {
 			iov[i].iov_base =
 				(char *)tx_iov[tx_entry->iov_index].iov_base +
 				tx_entry->iov_offset;
 			if (rxr_ep_mr_local(ep))
-				desc[i] = tx_entry->desc[tx_entry->iov_index];
+				desc[i] = tx_entry->base.desc[tx_entry->iov_index];
 
 			len = tx_iov[tx_entry->iov_index].iov_len
 			      - tx_entry->iov_offset;
@@ -197,12 +197,12 @@ ssize_t rxr_pkt_send_data_desc(struct rxr_ep *ep,
 	data_pkt->hdr.seg_size = (uint16_t)payload_size;
 	pkt_entry->pkt_size = payload_size + RXR_DATA_HDR_SIZE;
 	pkt_entry->x_entry = tx_entry;
-	pkt_entry->addr = tx_entry->addr;
+	pkt_entry->addr = tx_entry->base.addr;
 
 	FI_DBG(&rxr_prov, FI_LOG_EP_DATA,
 	       "Sending an iov count, %zu with payload size: %lu.\n",
 	       i, payload_size);
-	ret = rxr_pkt_entry_sendv(ep, pkt_entry, tx_entry->addr,
+	ret = rxr_pkt_entry_sendv(ep, pkt_entry, tx_entry->base.addr,
 				  (const struct iovec *)iov,
 				  desc, i, tx_entry->send_flags);
 	return ret;
@@ -217,7 +217,7 @@ void rxr_pkt_handle_data_send_completion(struct rxr_ep *ep,
 	tx_entry->bytes_acked +=
 		rxr_get_data_pkt(pkt_entry->pkt)->hdr.seg_size;
 
-	if (tx_entry->total_len == tx_entry->bytes_acked)
+	if (tx_entry->base.total_len == tx_entry->bytes_acked)
 		rxr_cq_handle_tx_completion(ep, tx_entry);
 }
 
@@ -241,10 +241,10 @@ int rxr_pkt_proc_data(struct rxr_ep *ep,
 #endif
 	/* we are sinking message for CANCEL/DISCARD entry */
 	if (OFI_LIKELY(!(rx_entry->rxr_flags & RXR_RECV_CANCEL)) &&
-	    rx_entry->cq_entry.len > seg_offset) {
+	    rx_entry->base.cq_entry.len > seg_offset) {
 		bytes_copied = rxr_copy_to_rx(data, seg_size, rx_entry, seg_offset);
 
-		if (bytes_copied != MIN(seg_size, rx_entry->cq_entry.len - seg_offset)) {
+		if (bytes_copied != MIN(seg_size, rx_entry->base.cq_entry.len - seg_offset)) {
 			FI_WARN(&rxr_prov, FI_LOG_CQ, "wrong size! bytes_copied: %ld\n",
 				bytes_copied);
 			if (rxr_cq_handle_rx_error(ep, rx_entry, -FI_EINVAL))
@@ -254,7 +254,7 @@ int rxr_pkt_proc_data(struct rxr_ep *ep,
 
 	rx_entry->bytes_done += seg_size;
 
-	peer = rxr_ep_get_peer(ep, rx_entry->addr);
+	peer = rxr_ep_get_peer(ep, rx_entry->base.addr);
 	peer->rx_credits += ofi_div_ceil(seg_size, ep->max_data_payload_size);
 
 	rx_entry->window -= seg_size;
@@ -263,11 +263,11 @@ int rxr_pkt_proc_data(struct rxr_ep *ep,
 
 	/* bytes_done is total bytes sent/received, which could be larger than
 	 * to bytes copied to recv buffer (for truncated messages).
-	 * rx_entry->total_len is from rtm header and is the size of send buffer,
+	 * rx_entry->base.total_len is from rtm header and is the size of send buffer,
 	 * thus we always have:
 	 *             rx_entry->total >= rx_entry->bytes_done
 	 */
-	bytes_left = rx_entry->total_len - rx_entry->bytes_done;
+	bytes_left = rx_entry->base.total_len - rx_entry->bytes_done;
 	assert(bytes_left >= 0);
 	if (!bytes_left) {
 #if ENABLE_DEBUG

@@ -96,7 +96,7 @@ int rxr_cq_handle_rx_error(struct rxr_ep *ep, struct rxr_rx_entry *rx_entry,
 	switch (rx_entry->state) {
 	case RXR_RX_INIT:
 	case RXR_RX_UNEXP:
-		dlist_remove(&rx_entry->entry);
+		dlist_remove(&rx_entry->base.entry);
 		break;
 	case RXR_RX_MATCHED:
 		break;
@@ -108,7 +108,7 @@ int rxr_cq_handle_rx_error(struct rxr_ep *ep, struct rxr_rx_entry *rx_entry,
 	case RXR_RX_QUEUED_CTRL:
 	case RXR_RX_QUEUED_CTS_RNR:
 	case RXR_RX_QUEUED_EOR:
-		dlist_remove(&rx_entry->queued_entry);
+		dlist_remove(&rx_entry->base.queued_entry);
 		break;
 	default:
 		FI_WARN(&rxr_prov, FI_LOG_CQ, "rx_entry unknown state %d\n",
@@ -116,7 +116,7 @@ int rxr_cq_handle_rx_error(struct rxr_ep *ep, struct rxr_rx_entry *rx_entry,
 		assert(0 && "rx_entry unknown state");
 	}
 
-	dlist_foreach_container_safe(&rx_entry->queued_pkts,
+	dlist_foreach_container_safe(&rx_entry->base.queued_pkts,
 				     struct rxr_pkt_entry,
 				     pkt_entry, entry, tmp)
 		rxr_pkt_entry_release_tx(ep, pkt_entry);
@@ -126,15 +126,15 @@ int rxr_cq_handle_rx_error(struct rxr_ep *ep, struct rxr_rx_entry *rx_entry,
 		rx_entry->unexp_pkt = NULL;
 	}
 
-	if (rx_entry->fi_flags & FI_MULTI_RECV)
+	if (rx_entry->base.fi_flags & FI_MULTI_RECV)
 		rxr_msg_multi_recv_handle_completion(ep, rx_entry);
 
-	err_entry.flags = rx_entry->cq_entry.flags;
+	err_entry.flags = rx_entry->base.cq_entry.flags;
 	if (rx_entry->state != RXR_RX_UNEXP)
-		err_entry.op_context = rx_entry->cq_entry.op_context;
-	err_entry.buf = rx_entry->cq_entry.buf;
-	err_entry.data = rx_entry->cq_entry.data;
-	err_entry.tag = rx_entry->cq_entry.tag;
+		err_entry.op_context = rx_entry->base.cq_entry.op_context;
+	err_entry.buf = rx_entry->base.cq_entry.buf;
+	err_entry.data = rx_entry->base.cq_entry.data;
+	err_entry.tag = rx_entry->base.cq_entry.tag;
 
 	rxr_msg_multi_recv_free_posted_entry(ep, rx_entry);
 
@@ -185,13 +185,13 @@ int rxr_cq_handle_tx_error(struct rxr_ep *ep, struct rxr_tx_entry *tx_entry,
 	case RXR_TX_REQ:
 		break;
 	case RXR_TX_SEND:
-		dlist_remove(&tx_entry->entry);
+		dlist_remove(&tx_entry->base.entry);
 		break;
 	case RXR_TX_QUEUED_CTRL:
 	case RXR_TX_QUEUED_SHM_RMA:
 	case RXR_TX_QUEUED_REQ_RNR:
 	case RXR_TX_QUEUED_DATA_RNR:
-		dlist_remove(&tx_entry->queued_entry);
+		dlist_remove(&tx_entry->base.queued_entry);
 		break;
 	case RXR_TX_SENT_READRSP:
 	case RXR_TX_WAIT_READ_FINISH:
@@ -202,16 +202,16 @@ int rxr_cq_handle_tx_error(struct rxr_ep *ep, struct rxr_tx_entry *tx_entry,
 		assert(0 && "tx_entry unknown state");
 	}
 
-	dlist_foreach_container_safe(&tx_entry->queued_pkts,
+	dlist_foreach_container_safe(&tx_entry->base.queued_pkts,
 				     struct rxr_pkt_entry,
 				     pkt_entry, entry, tmp)
 		rxr_pkt_entry_release_tx(ep, pkt_entry);
 
-	err_entry.flags = tx_entry->cq_entry.flags;
-	err_entry.op_context = tx_entry->cq_entry.op_context;
-	err_entry.buf = tx_entry->cq_entry.buf;
-	err_entry.data = tx_entry->cq_entry.data;
-	err_entry.tag = tx_entry->cq_entry.tag;
+	err_entry.flags = tx_entry->base.cq_entry.flags;
+	err_entry.op_context = tx_entry->base.cq_entry.op_context;
+	err_entry.buf = tx_entry->base.cq_entry.buf;
+	err_entry.data = tx_entry->base.cq_entry.data;
+	err_entry.tag = tx_entry->base.cq_entry.tag;
 	if (FI_VERSION_GE(api_version, FI_VERSION(1, 5)))
 		err_entry.err_data_size = 0;
 
@@ -227,7 +227,7 @@ int rxr_cq_handle_tx_error(struct rxr_ep *ep, struct rxr_tx_entry *tx_entry,
 	 */
 	//rxr_release_tx_entry(ep, tx_entry);
 
-	efa_cntr_report_error(&ep->util_ep, tx_entry->cq_entry.flags);
+	efa_cntr_report_error(&ep->util_ep, tx_entry->base.cq_entry.flags);
 	return ofi_cq_write_error(util_cq, &err_entry);
 }
 
@@ -399,15 +399,15 @@ int rxr_cq_handle_cq_error(struct rxr_ep *ep, ssize_t err)
 			return ret;
 		}
 
-		rxr_cq_queue_pkt(ep, &tx_entry->queued_pkts, pkt_entry);
+		rxr_cq_queue_pkt(ep, &tx_entry->base.queued_pkts, pkt_entry);
 		if (tx_entry->state == RXR_TX_SEND) {
-			dlist_remove(&tx_entry->entry);
+			dlist_remove(&tx_entry->base.entry);
 			tx_entry->state = RXR_TX_QUEUED_DATA_RNR;
-			dlist_insert_tail(&tx_entry->queued_entry,
+			dlist_insert_tail(&tx_entry->base.queued_entry,
 					  &ep->tx_entry_queued_list);
 		} else if (tx_entry->state == RXR_TX_REQ) {
 			tx_entry->state = RXR_TX_QUEUED_REQ_RNR;
-			dlist_insert_tail(&tx_entry->queued_entry,
+			dlist_insert_tail(&tx_entry->base.queued_entry,
 					  &ep->tx_entry_queued_list);
 		}
 		return 0;
@@ -420,10 +420,10 @@ int rxr_cq_handle_cq_error(struct rxr_ep *ep, ssize_t err)
 			rxr_pkt_entry_release_tx(ep, pkt_entry);
 			return ret;
 		}
-		rxr_cq_queue_pkt(ep, &rx_entry->queued_pkts, pkt_entry);
+		rxr_cq_queue_pkt(ep, &rx_entry->base.queued_pkts, pkt_entry);
 		if (rx_entry->state == RXR_RX_RECV) {
 			rx_entry->state = RXR_RX_QUEUED_CTS_RNR;
-			dlist_insert_tail(&rx_entry->queued_entry,
+			dlist_insert_tail(&rx_entry->base.queued_entry,
 					  &ep->rx_entry_queued_list);
 		}
 		return 0;
@@ -443,21 +443,21 @@ void rxr_cq_write_rx_completion(struct rxr_ep *ep,
 {
 	struct util_cq *rx_cq = ep->util_ep.rx_cq;
 	int ret = 0;
-	if (OFI_UNLIKELY(rx_entry->cq_entry.len < rx_entry->total_len)) {
+	if (OFI_UNLIKELY(rx_entry->base.cq_entry.len < rx_entry->base.total_len)) {
 		FI_WARN(&rxr_prov, FI_LOG_CQ,
 			"Message truncated: tag: %"PRIu64" len: %"PRIu64" total_len: %zu\n",
-			rx_entry->cq_entry.tag,	rx_entry->total_len,
-			rx_entry->cq_entry.len);
+			rx_entry->base.cq_entry.tag,	rx_entry->base.total_len,
+			rx_entry->base.cq_entry.len);
 
 		ret = ofi_cq_write_error_trunc(ep->util_ep.rx_cq,
-					       rx_entry->cq_entry.op_context,
-					       rx_entry->cq_entry.flags,
-					       rx_entry->total_len,
-					       rx_entry->cq_entry.buf,
-					       rx_entry->cq_entry.data,
-					       rx_entry->cq_entry.tag,
-					       rx_entry->total_len -
-					       rx_entry->cq_entry.len);
+					       rx_entry->base.cq_entry.op_context,
+					       rx_entry->base.cq_entry.flags,
+					       rx_entry->base.total_len,
+					       rx_entry->base.cq_entry.buf,
+					       rx_entry->base.cq_entry.data,
+					       rx_entry->base.cq_entry.tag,
+					       rx_entry->base.total_len -
+					       rx_entry->base.cq_entry.len);
 
 		rxr_rm_rx_cq_check(ep, rx_cq);
 
@@ -466,37 +466,37 @@ void rxr_cq_write_rx_completion(struct rxr_ep *ep,
 				"Unable to write recv error cq: %s\n",
 				fi_strerror(-ret));
 
-		efa_cntr_report_error(&ep->util_ep, rx_entry->cq_entry.flags);
+		efa_cntr_report_error(&ep->util_ep, rx_entry->base.cq_entry.flags);
 		return;
 	}
 
 	if (!(rx_entry->rxr_flags & RXR_RECV_CANCEL) &&
-	    (ofi_need_completion(rxr_rx_flags(ep), rx_entry->fi_flags) ||
-	     (rx_entry->cq_entry.flags & FI_MULTI_RECV))) {
+	    (ofi_need_completion(rxr_rx_flags(ep), rx_entry->base.fi_flags) ||
+	     (rx_entry->base.cq_entry.flags & FI_MULTI_RECV))) {
 		FI_DBG(&rxr_prov, FI_LOG_CQ,
 		       "Writing recv completion for rx_entry from peer: %"
 		       PRIu64 " rx_id: %" PRIu32 " msg_id: %" PRIu32
 		       " tag: %lx total_len: %" PRIu64 "\n",
-		       rx_entry->addr, rx_entry->rx_id, rx_entry->msg_id,
-		       rx_entry->cq_entry.tag, rx_entry->total_len);
+		       rx_entry->base.addr, rx_entry->base.rx_id, rx_entry->base.msg_id,
+		       rx_entry->base.cq_entry.tag, rx_entry->base.total_len);
 
 		if (ep->util_ep.caps & FI_SOURCE)
 			ret = ofi_cq_write_src(rx_cq,
-					       rx_entry->cq_entry.op_context,
-					       rx_entry->cq_entry.flags,
-					       rx_entry->cq_entry.len,
-					       rx_entry->cq_entry.buf,
-					       rx_entry->cq_entry.data,
-					       rx_entry->cq_entry.tag,
-					       rx_entry->addr);
+					       rx_entry->base.cq_entry.op_context,
+					       rx_entry->base.cq_entry.flags,
+					       rx_entry->base.cq_entry.len,
+					       rx_entry->base.cq_entry.buf,
+					       rx_entry->base.cq_entry.data,
+					       rx_entry->base.cq_entry.tag,
+					       rx_entry->base.addr);
 		else
 			ret = ofi_cq_write(rx_cq,
-					   rx_entry->cq_entry.op_context,
-					   rx_entry->cq_entry.flags,
-					   rx_entry->cq_entry.len,
-					   rx_entry->cq_entry.buf,
-					   rx_entry->cq_entry.data,
-					   rx_entry->cq_entry.tag);
+					   rx_entry->base.cq_entry.op_context,
+					   rx_entry->base.cq_entry.flags,
+					   rx_entry->base.cq_entry.len,
+					   rx_entry->base.cq_entry.buf,
+					   rx_entry->base.cq_entry.data,
+					   rx_entry->base.cq_entry.tag);
 
 		rxr_rm_rx_cq_check(ep, rx_cq);
 
@@ -510,7 +510,7 @@ void rxr_cq_write_rx_completion(struct rxr_ep *ep,
 		}
 	}
 
-	efa_cntr_report_rx_completion(&ep->util_ep, rx_entry->cq_entry.flags);
+	efa_cntr_report_rx_completion(&ep->util_ep, rx_entry->base.cq_entry.flags);
 }
 
 void rxr_cq_handle_rx_completion(struct rxr_ep *ep,
@@ -519,21 +519,21 @@ void rxr_cq_handle_rx_completion(struct rxr_ep *ep,
 {
 	struct rxr_tx_entry *tx_entry = NULL;
 
-	if (rx_entry->cq_entry.flags & FI_WRITE) {
+	if (rx_entry->base.cq_entry.flags & FI_WRITE) {
 		/*
 		 * must be on the remote side, notify cq/counter
 		 * if FI_RMA_EVENT is requested or REMOTE_CQ_DATA is on
 		 */
-		if (rx_entry->cq_entry.flags & FI_REMOTE_CQ_DATA)
+		if (rx_entry->base.cq_entry.flags & FI_REMOTE_CQ_DATA)
 			rxr_cq_write_rx_completion(ep, rx_entry);
 		else if (ep->util_ep.caps & FI_RMA_EVENT)
-			efa_cntr_report_rx_completion(&ep->util_ep, rx_entry->cq_entry.flags);
+			efa_cntr_report_rx_completion(&ep->util_ep, rx_entry->base.cq_entry.flags);
 
 		rxr_pkt_entry_release_rx(ep, pkt_entry);
 		return;
 	}
 
-	if (rx_entry->cq_entry.flags & FI_READ) {
+	if (rx_entry->base.cq_entry.flags & FI_READ) {
 		/* Note for emulated FI_READ, there is an rx_entry on
 		 * both initiator side and on remote side.
 		 * However, only on the initiator side,
@@ -563,11 +563,11 @@ void rxr_cq_handle_rx_completion(struct rxr_ep *ep,
 		 */
 		tx_entry = ofi_bufpool_get_ibuf(ep->tx_entry_pool, rx_entry->rma_loc_tx_id);
 		assert(tx_entry->state == RXR_TX_WAIT_READ_FINISH);
-		if (tx_entry->fi_flags & FI_COMPLETION) {
+		if (tx_entry->base.fi_flags & FI_COMPLETION) {
 			/* Note write_tx_completion() will release tx_entry */
 			rxr_cq_write_tx_completion(ep, tx_entry);
 		} else {
-			efa_cntr_report_tx_completion(&ep->util_ep, tx_entry->cq_entry.flags);
+			efa_cntr_report_tx_completion(&ep->util_ep, tx_entry->base.cq_entry.flags);
 			rxr_release_tx_entry(ep, tx_entry);
 		}
 
@@ -579,7 +579,7 @@ void rxr_cq_handle_rx_completion(struct rxr_ep *ep,
 		return;
 	}
 
-	if (rx_entry->fi_flags & FI_MULTI_RECV)
+	if (rx_entry->base.fi_flags & FI_MULTI_RECV)
 		rxr_msg_multi_recv_handle_completion(ep, rx_entry);
 
 	rxr_cq_write_rx_completion(ep, rx_entry);
@@ -730,33 +730,33 @@ void rxr_cq_write_tx_completion(struct rxr_ep *ep,
 	struct util_cq *tx_cq = ep->util_ep.tx_cq;
 	int ret;
 
-	if (!(tx_entry->fi_flags & RXR_NO_COMPLETION) &&
-	    ofi_need_completion(rxr_tx_flags(ep), tx_entry->fi_flags)) {
+	if (!(tx_entry->base.fi_flags & RXR_NO_COMPLETION) &&
+	    ofi_need_completion(rxr_tx_flags(ep), tx_entry->base.fi_flags)) {
 		FI_DBG(&rxr_prov, FI_LOG_CQ,
 		       "Writing send completion for tx_entry to peer: %" PRIu64
 		       " tx_id: %" PRIu32 " msg_id: %" PRIu32 " tag: %lx len: %"
 		       PRIu64 "\n",
-		       tx_entry->addr, tx_entry->tx_id, tx_entry->msg_id,
-		       tx_entry->cq_entry.tag, tx_entry->total_len);
+		       tx_entry->base.addr, tx_entry->base.tx_id, tx_entry->base.msg_id,
+		       tx_entry->base.cq_entry.tag, tx_entry->base.total_len);
 
 		/* TX completions should not send peer address to util_cq */
 		if (ep->util_ep.caps & FI_SOURCE)
 			ret = ofi_cq_write_src(tx_cq,
-					       tx_entry->cq_entry.op_context,
-					       tx_entry->cq_entry.flags,
-					       tx_entry->cq_entry.len,
-					       tx_entry->cq_entry.buf,
-					       tx_entry->cq_entry.data,
-					       tx_entry->cq_entry.tag,
+					       tx_entry->base.cq_entry.op_context,
+					       tx_entry->base.cq_entry.flags,
+					       tx_entry->base.cq_entry.len,
+					       tx_entry->base.cq_entry.buf,
+					       tx_entry->base.cq_entry.data,
+					       tx_entry->base.cq_entry.tag,
 					       FI_ADDR_NOTAVAIL);
 		else
 			ret = ofi_cq_write(tx_cq,
-					   tx_entry->cq_entry.op_context,
-					   tx_entry->cq_entry.flags,
-					   tx_entry->cq_entry.len,
-					   tx_entry->cq_entry.buf,
-					   tx_entry->cq_entry.data,
-					   tx_entry->cq_entry.tag);
+					   tx_entry->base.cq_entry.op_context,
+					   tx_entry->base.cq_entry.flags,
+					   tx_entry->base.cq_entry.len,
+					   tx_entry->base.cq_entry.buf,
+					   tx_entry->base.cq_entry.data,
+					   tx_entry->base.cq_entry.tag);
 
 		rxr_rm_tx_cq_check(ep, tx_cq);
 
@@ -770,7 +770,7 @@ void rxr_cq_write_tx_completion(struct rxr_ep *ep,
 		}
 	}
 
-	efa_cntr_report_tx_completion(&ep->util_ep, tx_entry->cq_entry.flags);
+	efa_cntr_report_tx_completion(&ep->util_ep, tx_entry->base.cq_entry.flags);
 	rxr_release_tx_entry(ep, tx_entry);
 	return;
 }
@@ -779,15 +779,15 @@ int rxr_tx_entry_mr_dereg(struct rxr_tx_entry *tx_entry)
 {
 	int i, err = 0;
 
-	for (i = 0; i < tx_entry->iov_count; i++) {
-		if (tx_entry->mr[i]) {
-			err = fi_close((struct fid *)tx_entry->mr[i]);
+	for (i = 0; i < tx_entry->base.iov_count; i++) {
+		if (tx_entry->base.mr[i]) {
+			err = fi_close((struct fid *)tx_entry->base.mr[i]);
 			if (OFI_UNLIKELY(err)) {
 				FI_WARN(&rxr_prov, FI_LOG_CQ, "mr dereg failed. err=%d\n", err);
 				return err;
 			}
 
-			tx_entry->mr[i] = NULL;
+			tx_entry->base.mr[i] = NULL;
 		}
 	}
 
@@ -800,7 +800,7 @@ void rxr_cq_handle_tx_completion(struct rxr_ep *ep, struct rxr_tx_entry *tx_entr
 	struct rxr_peer *peer;
 
 	if (tx_entry->state == RXR_TX_SEND)
-		dlist_remove(&tx_entry->entry);
+		dlist_remove(&tx_entry->base.entry);
 
 	if (efa_mr_cache_enable && rxr_ep_mr_local(ep)) {
 		ret = rxr_tx_entry_mr_dereg(tx_entry);
@@ -811,10 +811,10 @@ void rxr_cq_handle_tx_completion(struct rxr_ep *ep, struct rxr_tx_entry *tx_entr
 		}
 	}
 
-	peer = rxr_ep_get_peer(ep, tx_entry->addr);
+	peer = rxr_ep_get_peer(ep, tx_entry->base.addr);
 	peer->tx_credits += tx_entry->credit_allocated;
 
-	if (tx_entry->cq_entry.flags & FI_READ) {
+	if (tx_entry->base.cq_entry.flags & FI_READ) {
 		/*
 		 * this must be on remote side
 		 * see explaination on rxr_cq_handle_rx_completion
@@ -826,23 +826,23 @@ void rxr_cq_handle_tx_completion(struct rxr_ep *ep, struct rxr_tx_entry *tx_entr
 		assert(rx_entry->state == RXR_RX_WAIT_READ_FINISH);
 
 		if (ep->util_ep.caps & FI_RMA_EVENT) {
-			rx_entry->cq_entry.len = rx_entry->total_len;
-			rx_entry->bytes_done = rx_entry->total_len;
-			efa_cntr_report_rx_completion(&ep->util_ep, rx_entry->cq_entry.flags);
+			rx_entry->base.cq_entry.len = rx_entry->base.total_len;
+			rx_entry->bytes_done = rx_entry->base.total_len;
+			efa_cntr_report_rx_completion(&ep->util_ep, rx_entry->base.cq_entry.flags);
 		}
 
 		rxr_release_rx_entry(ep, rx_entry);
 		/* just release tx, do not write completion */
 		rxr_release_tx_entry(ep, tx_entry);
-	} else if (tx_entry->cq_entry.flags & FI_WRITE) {
-		if (tx_entry->fi_flags & FI_COMPLETION) {
+	} else if (tx_entry->base.cq_entry.flags & FI_WRITE) {
+		if (tx_entry->base.fi_flags & FI_COMPLETION) {
 			rxr_cq_write_tx_completion(ep, tx_entry);
 		} else {
-			efa_cntr_report_tx_completion(&ep->util_ep, tx_entry->cq_entry.flags);
+			efa_cntr_report_tx_completion(&ep->util_ep, tx_entry->base.cq_entry.flags);
 			rxr_release_tx_entry(ep, tx_entry);
 		}
 	} else {
-		assert(tx_entry->cq_entry.flags & FI_SEND);
+		assert(tx_entry->base.cq_entry.flags & FI_SEND);
 		rxr_cq_write_tx_completion(ep, tx_entry);
 	}
 }

@@ -87,14 +87,14 @@ rxr_atomic_alloc_tx_entry(struct rxr_ep *rxr_ep,
 
 	assert(msg_atomic->rma_iov_count > 0);
 	assert(msg_atomic->rma_iov);
-	tx_entry->rma_iov_count = msg_atomic->rma_iov_count;
+	tx_entry->base.rma_iov_count = msg_atomic->rma_iov_count;
 	ofi_rma_ioc_to_iov(msg_atomic->rma_iov,
-			   tx_entry->rma_iov,
+			   tx_entry->base.rma_iov,
 			   msg_atomic->rma_iov_count,
 			   datatype_size);
 
-	tx_entry->atomic_hdr.atomic_op = msg_atomic->op;
-	tx_entry->atomic_hdr.datatype = msg_atomic->datatype;
+	tx_entry->base.atomic_hdr.atomic_op = msg_atomic->op;
+	tx_entry->base.atomic_hdr.datatype = msg_atomic->datatype;
 
 	if (op == ofi_op_atomic_fetch || op == ofi_op_atomic_compare) {
 		assert(atomic_ex);
@@ -137,7 +137,7 @@ ssize_t rxr_atomic_generic_efa(struct rxr_ep *rxr_ep,
 		goto out;
 	}
 
-	tx_entry->msg_id = (peer->next_msg_id != ~0) ?
+	tx_entry->base.msg_id = (peer->next_msg_id != ~0) ?
 			    peer->next_msg_id++ : ++peer->next_msg_id;
 
 	err = rxr_pkt_post_ctrl_or_queue(rxr_ep, RXR_TX_ENTRY,

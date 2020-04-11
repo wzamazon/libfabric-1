@@ -101,37 +101,37 @@ struct rxr_read_entry *rxr_read_alloc_entry(struct rxr_ep *ep, int entry_type, v
 
 	if (entry_type == RXR_TX_ENTRY) {
 		tx_entry = (struct rxr_tx_entry *)x_entry;
-		assert(tx_entry->op == ofi_op_read_req);
-		read_entry->x_entry_id = tx_entry->tx_id;
-		read_entry->addr = tx_entry->addr;
+		assert(tx_entry->base.op == ofi_op_read_req);
+		read_entry->x_entry_id = tx_entry->base.tx_id;
+		read_entry->addr = tx_entry->base.addr;
 
-		read_entry->iov_count = tx_entry->iov_count;
-		read_entry->iov = tx_entry->iov;
+		read_entry->iov_count = tx_entry->base.iov_count;
+		read_entry->iov = tx_entry->base.iov;
 
-		read_entry->rma_iov_count = tx_entry->rma_iov_count;
-		read_entry->rma_iov = tx_entry->rma_iov;
+		read_entry->rma_iov_count = tx_entry->base.rma_iov_count;
+		read_entry->rma_iov = tx_entry->base.rma_iov;
 
-		total_iov_len = ofi_total_iov_len(tx_entry->iov, tx_entry->iov_count);
-		total_rma_iov_len = ofi_total_rma_iov_len(tx_entry->rma_iov, tx_entry->rma_iov_count);
+		total_iov_len = ofi_total_iov_len(tx_entry->base.iov, tx_entry->base.iov_count);
+		total_rma_iov_len = ofi_total_rma_iov_len(tx_entry->base.rma_iov, tx_entry->base.rma_iov_count);
 		read_entry->total_len = MIN(total_iov_len, total_rma_iov_len);
-		mr_desc = tx_entry->desc;
+		mr_desc = tx_entry->base.desc;
 	} else {
 		rx_entry = (struct rxr_rx_entry *)x_entry;
-		assert(rx_entry->op == ofi_op_write || rx_entry->op == ofi_op_msg ||
-		       rx_entry->op == ofi_op_tagged);
+		assert(rx_entry->base.op == ofi_op_write || rx_entry->base.op == ofi_op_msg ||
+		       rx_entry->base.op == ofi_op_tagged);
 
-		read_entry->x_entry_id = rx_entry->rx_id;
-		read_entry->addr = rx_entry->addr;
+		read_entry->x_entry_id = rx_entry->base.rx_id;
+		read_entry->addr = rx_entry->base.addr;
 
-		read_entry->iov_count = rx_entry->iov_count;
-		read_entry->iov = rx_entry->iov;
+		read_entry->iov_count = rx_entry->base.iov_count;
+		read_entry->iov = rx_entry->base.iov;
 
-		read_entry->rma_iov_count = rx_entry->rma_iov_count;
-		read_entry->rma_iov = rx_entry->rma_iov;
+		read_entry->rma_iov_count = rx_entry->base.rma_iov_count;
+		read_entry->rma_iov = rx_entry->base.rma_iov;
 
-		mr_desc = rx_entry->desc;
-		total_iov_len = ofi_total_iov_len(rx_entry->iov, rx_entry->iov_count);
-		total_rma_iov_len = ofi_total_rma_iov_len(rx_entry->rma_iov, rx_entry->rma_iov_count);
+		mr_desc = rx_entry->base.desc;
+		total_iov_len = ofi_total_iov_len(rx_entry->base.iov, rx_entry->base.iov_count);
+		total_rma_iov_len = ofi_total_rma_iov_len(rx_entry->base.rma_iov, rx_entry->base.rma_iov_count);
 		read_entry->total_len = MIN(total_iov_len, total_rma_iov_len);
 	}
 
@@ -211,10 +211,10 @@ int rxr_read_post_or_queue(struct rxr_ep *ep, int entry_type, void *x_entry)
 	int err, lower_ep_type;
 
 	if (entry_type == RXR_TX_ENTRY) {
-		peer = rxr_ep_get_peer(ep, ((struct rxr_tx_entry *)x_entry)->addr);
+		peer = rxr_ep_get_peer(ep, ((struct rxr_x_entry *)x_entry)->addr);
 	} else {
 		assert(entry_type == RXR_RX_ENTRY);
-		peer = rxr_ep_get_peer(ep, ((struct rxr_rx_entry *)x_entry)->addr);
+		peer = rxr_ep_get_peer(ep, ((struct rxr_x_entry *)x_entry)->addr);
 	}
 
 	assert(peer);
@@ -247,11 +247,11 @@ int rxr_read_init_iov(struct rxr_ep *ep,
 	int i;
 	struct fid_mr *mr;
 
-	for (i = 0; i < tx_entry->iov_count; ++i) {
-		assert(tx_entry->desc[i]);
-		read_iov[i].addr = (uint64_t)tx_entry->iov[i].iov_base;
-		read_iov[i].len = tx_entry->iov[i].iov_len;
-		mr = (struct fid_mr *)tx_entry->desc[i];
+	for (i = 0; i < tx_entry->base.iov_count; ++i) {
+		assert(tx_entry->base.desc[i]);
+		read_iov[i].addr = (uint64_t)tx_entry->base.iov[i].iov_base;
+		read_iov[i].len = tx_entry->base.iov[i].iov_len;
+		mr = (struct fid_mr *)tx_entry->base.desc[i];
 		read_iov[i].key = fi_mr_key(mr);
 	}
 

@@ -175,20 +175,20 @@ ssize_t rxr_pkt_init_cts(struct rxr_ep *ep,
 	cts_hdr->version = RXR_BASE_PROTOCOL_VERSION;
 	cts_hdr->flags = 0;
 
-	if (rx_entry->cq_entry.flags & FI_READ)
+	if (rx_entry->base.cq_entry.flags & FI_READ)
 		cts_hdr->flags |= RXR_CTS_READ_REQ;
 
-	cts_hdr->tx_id = rx_entry->tx_id;
-	cts_hdr->rx_id = rx_entry->rx_id;
+	cts_hdr->tx_id = rx_entry->base.tx_id;
+	cts_hdr->rx_id = rx_entry->base.rx_id;
 
-	bytes_left = rx_entry->total_len - rx_entry->bytes_done;
-	peer = rxr_ep_get_peer(ep, rx_entry->addr);
+	bytes_left = rx_entry->base.total_len - rx_entry->bytes_done;
+	peer = rxr_ep_get_peer(ep, rx_entry->base.addr);
 	rxr_pkt_calc_cts_window_credits(ep, peer, bytes_left,
 					rx_entry->credit_request,
 					&window, &rx_entry->credit_cts);
 	cts_hdr->window = window;
 	pkt_entry->pkt_size = sizeof(struct rxr_cts_hdr);
-	pkt_entry->addr = rx_entry->addr;
+	pkt_entry->addr = rx_entry->base.addr;
 	pkt_entry->x_entry = (void *)rx_entry;
 	return 0;
 }
@@ -224,11 +224,11 @@ void rxr_pkt_handle_cts_recv(struct rxr_ep *ep,
 	else
 		tx_entry = ofi_bufpool_get_ibuf(ep->tx_entry_pool, cts_pkt->tx_id);
 
-	tx_entry->rx_id = cts_pkt->rx_id;
+	tx_entry->base.rx_id = cts_pkt->rx_id;
 	tx_entry->window = cts_pkt->window;
 
 	/* Return any excess tx_credits that were borrowed for the request */
-	peer = rxr_ep_get_peer(ep, tx_entry->addr);
+	peer = rxr_ep_get_peer(ep, tx_entry->base.addr);
 	tx_entry->credit_allocated = ofi_div_ceil(cts_pkt->window, ep->max_data_payload_size);
 	if (tx_entry->credit_allocated < tx_entry->credit_request)
 		peer->tx_credits += tx_entry->credit_request - tx_entry->credit_allocated;
@@ -237,7 +237,7 @@ void rxr_pkt_handle_cts_recv(struct rxr_ep *ep,
 
 	if (tx_entry->state != RXR_TX_SEND) {
 		tx_entry->state = RXR_TX_SEND;
-		dlist_insert_tail(&tx_entry->entry, &ep->tx_pending_list);
+		dlist_insert_tail(&tx_entry->base.entry, &ep->tx_pending_list);
 	}
 }
 
@@ -255,14 +255,14 @@ int rxr_pkt_init_readrsp(struct rxr_ep *ep,
 	readrsp_hdr->type = RXR_READRSP_PKT;
 	readrsp_hdr->version = RXR_BASE_PROTOCOL_VERSION;
 	readrsp_hdr->flags = 0;
-	readrsp_hdr->tx_id = tx_entry->tx_id;
-	readrsp_hdr->rx_id = tx_entry->rx_id;
+	readrsp_hdr->tx_id = tx_entry->base.tx_id;
+	readrsp_hdr->rx_id = tx_entry->base.rx_id;
 	readrsp_hdr->seg_size = ofi_copy_from_iov(readrsp_pkt->data,
 						  mtu - RXR_READRSP_HDR_SIZE,
-						  tx_entry->iov,
-						  tx_entry->iov_count, 0);
+						  tx_entry->base.iov,
+						  tx_entry->base.iov_count, 0);
 	pkt_entry->pkt_size = RXR_READRSP_HDR_SIZE + readrsp_hdr->seg_size;
-	pkt_entry->addr = tx_entry->addr;
+	pkt_entry->addr = tx_entry->base.addr;
 	pkt_entry->x_entry = tx_entry;
 	return 0;
 }
@@ -278,13 +278,13 @@ void rxr_pkt_handle_readrsp_sent(struct rxr_ep *ep, struct rxr_pkt_entry *pkt_en
 	tx_entry->bytes_sent += data_len;
 	tx_entry->window -= data_len;
 	assert(tx_entry->window >= 0);
-	if (tx_entry->bytes_sent < tx_entry->total_len) {
-		assert(!rxr_ep_is_cuda_mr(tx_entry->desc[0]));
+	if (tx_entry->bytes_sent < tx_entry->base.total_len) {
+		assert(!rxr_ep_is_cuda_mr(tx_entry->base.desc[0]));
 		if (efa_mr_cache_enable && rxr_ep_mr_local(ep))
 			rxr_prepare_desc_send(ep, tx_entry);
 
 		tx_entry->state = RXR_TX_SEND;
-		dlist_insert_tail(&tx_entry->entry,
+		dlist_insert_tail(&tx_entry->base.entry,
 				  &ep->tx_pending_list);
 	}
 }
@@ -298,10 +298,10 @@ void rxr_pkt_handle_readrsp_send_completion(struct rxr_ep *ep,
 	readrsp_hdr = (struct rxr_readrsp_hdr *)pkt_entry->pkt;
 
 	tx_entry = (struct rxr_tx_entry *)pkt_entry->x_entry;
-	assert(tx_entry->cq_entry.flags & FI_READ);
+	assert(tx_entry->base.cq_entry.flags & FI_READ);
 
 	tx_entry->bytes_acked += readrsp_hdr->seg_size;
-	if (tx_entry->total_len == tx_entry->bytes_acked)
+	if (tx_entry->base.total_len == tx_entry->bytes_acked)
 		rxr_cq_handle_tx_completion(ep, tx_entry);
 }
 
@@ -315,8 +315,8 @@ void rxr_pkt_handle_readrsp_recv(struct rxr_ep *ep,
 	readrsp_pkt = (struct rxr_readrsp_pkt *)pkt_entry->pkt;
 	readrsp_hdr = &readrsp_pkt->hdr;
 	rx_entry = ofi_bufpool_get_ibuf(ep->rx_entry_pool, readrsp_hdr->rx_id);
-	assert(rx_entry->cq_entry.flags & FI_READ);
-	rx_entry->tx_id = readrsp_hdr->tx_id;
+	assert(rx_entry->base.cq_entry.flags & FI_READ);
+	rx_entry->base.tx_id = readrsp_hdr->tx_id;
 	rxr_pkt_proc_data(ep, rx_entry, pkt_entry,
 			  readrsp_pkt->data,
 			  0, readrsp_hdr->seg_size);
@@ -338,7 +338,7 @@ void rxr_pkt_init_write_context(struct rxr_tx_entry *tx_entry,
 	rma_context_pkt->type = RXR_RMA_CONTEXT_PKT;
 	rma_context_pkt->version = RXR_BASE_PROTOCOL_VERSION;
 	rma_context_pkt->context_type = RXR_WRITE_CONTEXT;
-	rma_context_pkt->tx_id = tx_entry->tx_id;
+	rma_context_pkt->tx_id = tx_entry->base.tx_id;
 }
 
 void rxr_pkt_init_read_context(struct rxr_ep *rxr_ep,
@@ -384,7 +384,7 @@ void rxr_pkt_handle_rma_read_completion(struct rxr_ep *ep,
 	if (read_entry->bytes_finished == read_entry->total_len) {
 		if (read_entry->x_entry_type == RXR_TX_ENTRY) {
 			tx_entry = ofi_bufpool_get_ibuf(ep->tx_entry_pool, read_entry->x_entry_id);
-			assert(tx_entry && tx_entry->cq_entry.flags & FI_READ);
+			assert(tx_entry && tx_entry->base.cq_entry.flags & FI_READ);
 			rxr_cq_write_tx_completion(ep, tx_entry);
 		} else {
 			inject = (read_entry->lower_ep_type == SHM_EP);
@@ -400,11 +400,11 @@ void rxr_pkt_handle_rma_read_completion(struct rxr_ep *ep,
 				/* inject will not generate a completion, so we write rx completion here,
 				 * otherwise, rx completion is write in rxr_pkt_handle_eor_send_completion
 				 */
-				if (rx_entry->op == ofi_op_msg || rx_entry->op == ofi_op_tagged) {
+				if (rx_entry->base.op == ofi_op_msg || rx_entry->base.op == ofi_op_tagged) {
 					rxr_cq_write_rx_completion(ep, rx_entry);
 				} else {
-					assert(rx_entry->op == ofi_op_write);
-					if (rx_entry->cq_entry.flags & FI_REMOTE_CQ_DATA)
+					assert(rx_entry->base.op == ofi_op_write);
+					if (rx_entry->base.cq_entry.flags & FI_REMOTE_CQ_DATA)
 						rxr_cq_write_rx_completion(ep, rx_entry);
 				}
 
@@ -433,10 +433,10 @@ void rxr_pkt_handle_rma_completion(struct rxr_ep *ep,
 	switch (rma_context_pkt->context_type) {
 	case RXR_WRITE_CONTEXT:
 		tx_entry = (struct rxr_tx_entry *)context_pkt_entry->x_entry;
-		if (tx_entry->fi_flags & FI_COMPLETION) {
+		if (tx_entry->base.fi_flags & FI_COMPLETION) {
 			rxr_cq_write_tx_completion(ep, tx_entry);
 		} else {
-			efa_cntr_report_tx_completion(&ep->util_ep, tx_entry->cq_entry.flags);
+			efa_cntr_report_tx_completion(&ep->util_ep, tx_entry->base.cq_entry.flags);
 			rxr_release_tx_entry(ep, tx_entry);
 		}
 		break;
@@ -461,10 +461,10 @@ int rxr_pkt_init_eor(struct rxr_ep *ep, struct rxr_rx_entry *rx_entry, struct rx
 	eor_hdr->type = RXR_EOR_PKT;
 	eor_hdr->version = RXR_BASE_PROTOCOL_VERSION;
 	eor_hdr->flags = 0;
-	eor_hdr->tx_id = rx_entry->tx_id;
-	eor_hdr->rx_id = rx_entry->rx_id;
+	eor_hdr->tx_id = rx_entry->base.tx_id;
+	eor_hdr->rx_id = rx_entry->base.rx_id;
 	pkt_entry->pkt_size = sizeof(struct rxr_eor_hdr);
-	pkt_entry->addr = rx_entry->addr;
+	pkt_entry->addr = rx_entry->base.addr;
 	pkt_entry->x_entry = rx_entry;
 	return 0;
 }
@@ -478,13 +478,13 @@ void rxr_pkt_handle_eor_send_completion(struct rxr_ep *ep,
 	eor_hdr = (struct rxr_eor_hdr *)pkt_entry->pkt;
 
 	rx_entry = ofi_bufpool_get_ibuf(ep->rx_entry_pool, eor_hdr->rx_id);
-	assert(rx_entry && rx_entry->rx_id == eor_hdr->rx_id);
+	assert(rx_entry && rx_entry->base.rx_id == eor_hdr->rx_id);
 
-	if (rx_entry->op == ofi_op_msg || rx_entry->op == ofi_op_tagged) {
+	if (rx_entry->base.op == ofi_op_msg || rx_entry->base.op == ofi_op_tagged) {
 		rxr_cq_write_rx_completion(ep, rx_entry);
 	} else {
-		assert(rx_entry->op == ofi_op_write);
-		if (rx_entry->cq_entry.flags & FI_REMOTE_CQ_DATA)
+		assert(rx_entry->base.op == ofi_op_write);
+		if (rx_entry->base.cq_entry.flags & FI_REMOTE_CQ_DATA)
 			rxr_cq_write_rx_completion(ep, rx_entry);
 	}
 
@@ -524,7 +524,7 @@ void rxr_pkt_handle_eor_recv(struct rxr_ep *ep,
 /* atomrsp packet related functions: init, handle_sent, handle_send_completion and recv
  *
  * initialize atomic response packet by creating a packet that hold original data
- * in rx_entry->iov. rx_entry->iov will then be changed by atomic operation.
+ * in rx_entry->base.iov. rx_entry->base.iov will then be changed by atomic operation.
  * release that packet entry until it is sent.
  */
 int rxr_pkt_init_atomrsp(struct rxr_ep *ep, struct rxr_rx_entry *rx_entry,
@@ -536,16 +536,16 @@ int rxr_pkt_init_atomrsp(struct rxr_ep *ep, struct rxr_rx_entry *rx_entry,
 	assert(rx_entry->atomrsp_pkt);
 	pkt_size = rx_entry->atomrsp_pkt->pkt_size;
 	pkt_entry->pkt_size = pkt_size;
-	pkt_entry->addr = rx_entry->addr;
+	pkt_entry->addr = rx_entry->base.addr;
 	pkt_entry->x_entry = rx_entry;
 
 	atomrsp_hdr = (struct rxr_atomrsp_hdr *)pkt_entry->pkt;
 	atomrsp_hdr->type = RXR_ATOMRSP_PKT;
 	atomrsp_hdr->version = RXR_BASE_PROTOCOL_VERSION;
 	atomrsp_hdr->flags = 0;
-	atomrsp_hdr->tx_id = rx_entry->tx_id;
-	atomrsp_hdr->rx_id = rx_entry->rx_id;
-	atomrsp_hdr->seg_size = ofi_total_iov_len(rx_entry->iov, rx_entry->iov_count);
+	atomrsp_hdr->tx_id = rx_entry->base.tx_id;
+	atomrsp_hdr->rx_id = rx_entry->base.rx_id;
+	atomrsp_hdr->seg_size = ofi_total_iov_len(rx_entry->base.iov, rx_entry->base.iov_count);
 
 	assert(RXR_ATOMRSP_HDR_SIZE + atomrsp_hdr->seg_size < ep->mtu_size);
 
@@ -584,11 +584,11 @@ void rxr_pkt_handle_atomrsp_recv(struct rxr_ep *ep,
 			0, atomrsp_pkt->data,
 			atomrsp_hdr->seg_size);
 
-	if (tx_entry->fi_flags & FI_COMPLETION) {
+	if (tx_entry->base.fi_flags & FI_COMPLETION) {
 		/* Note write_tx_completion() will release tx_entry */
 		rxr_cq_write_tx_completion(ep, tx_entry);
 	} else {
-		efa_cntr_report_tx_completion(&ep->util_ep, tx_entry->cq_entry.flags);
+		efa_cntr_report_tx_completion(&ep->util_ep, tx_entry->base.cq_entry.flags);
 		rxr_release_tx_entry(ep, tx_entry);
 	}
 
