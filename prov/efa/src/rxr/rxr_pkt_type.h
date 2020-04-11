@@ -115,7 +115,7 @@ struct rxr_ep;
 struct rxr_peer;
 struct rxr_tx_entry;
 struct rxr_rx_entry;
-struct rxr_read_entry;
+struct rxr_x_entry;
 
 /*
  *  HANDSHAKE packet header and functions
@@ -316,7 +316,7 @@ void rxr_pkt_init_write_context(struct rxr_tx_entry *tx_entry,
 				struct rxr_pkt_entry *pkt_entry);
 
 void rxr_pkt_init_read_context(struct rxr_ep *rxr_ep,
-			       struct rxr_read_entry *read_entry,
+			       struct rxr_x_entry *x_entry,
 			       size_t seg_size,
 			       struct rxr_pkt_entry *pkt_entry);
 

@@ -320,7 +320,7 @@ ssize_t rxr_rma_readmsg(struct fid_ep *ep, const struct fi_msg_rma *msg, uint64_
 	}
 
 	if (use_lower_ep_read) {
-		err = rxr_read_post_or_queue(rxr_ep, RXR_TX_ENTRY, tx_entry);
+		err = rxr_read_post_or_queue(rxr_ep, &tx_entry->base);
 		if (OFI_UNLIKELY(err == -FI_ENOBUFS)) {
 			rxr_release_tx_entry(rxr_ep, tx_entry);
 			err = -FI_EAGAIN;
@@ -395,7 +395,7 @@ ssize_t rxr_rma_post_write(struct rxr_ep *ep, struct rxr_tx_entry *tx_entry)
 	if (tx_entry->base.total_len >= rxr_env.efa_max_long_write_size &&
 	    efa_both_support_rdma_read(ep, peer) &&
 	    (tx_entry->base.desc[0] || efa_mr_cache_enable)) {
-		err = rxr_ep_tx_init_mr_desc(ep, tx_entry, 0, FI_REMOTE_READ);
+		err = rxr_ep_init_mr_desc(ep, &tx_entry->base, 0, FI_REMOTE_READ);
 
 		if (!err)
 			return rxr_pkt_post_ctrl_or_queue(ep, RXR_TX_ENTRY, tx_entry, RXR_READ_RTW_PKT, 0);

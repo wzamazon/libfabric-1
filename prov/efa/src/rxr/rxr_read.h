@@ -38,57 +38,17 @@
 #ifndef _RXR_RDMA_H_
 #define _RXR_RDMA_H_
 
-enum rxr_read_entry_state {
-	RXR_RDMA_ENTRY_FREE = 0,
-	RXR_RDMA_ENTRY_CREATED,
-	RXR_RDMA_ENTRY_PENDING
-};
-
-/* rxr_read_entry was arranged as a packet
- * and was put in a rxr_pkt_entry. Because rxr_pkt_entry is used
- * as context.
- */
-struct rxr_read_entry {
-	int read_id;
-	enum rxr_lower_ep_type lower_ep_type;
-
-	enum rxr_x_entry_type x_entry_type;
-	int x_entry_id;
-	enum rxr_read_entry_state state;
-
-	fi_addr_t addr;
-
-	struct iovec *iov;
-	size_t iov_count;
-	struct fid_mr *mr[RXR_IOV_LIMIT];
-	void *mr_desc[RXR_IOV_LIMIT];
-
-	struct fi_rma_iov *rma_iov;
-	size_t rma_iov_count;
-
-	size_t total_len;
-	size_t bytes_submitted; /* bytes fi_read() succeeded */
-	size_t bytes_finished; /* bytes received completion */
-
-	struct dlist_entry pending_entry;
-};
-
-struct rxr_read_entry *rxr_read_alloc_entry(struct rxr_ep *ep, int entry_type, void *x_entry,
-					    enum rxr_lower_ep_type lower_ep_type);
-
-void rxr_read_release_entry(struct rxr_ep *ep, struct rxr_read_entry *read_entry);
-
 int rxr_read_init_iov(struct rxr_ep *ep,
 		      struct rxr_tx_entry *tx_entry,
 		      struct fi_rma_iov *read_iov);
 
-int rxr_read_post(struct rxr_ep *ep, struct rxr_read_entry *read_entry);
+int rxr_read_post(struct rxr_ep *ep, struct rxr_x_entry *x_entry);
 
-int rxr_read_post_or_queue(struct rxr_ep *ep, int entry_type, void *x_entry);
+int rxr_read_post_or_queue(struct rxr_ep *ep, struct rxr_x_entry *x_entry);
 
 void rxr_read_handle_read_completion(struct rxr_ep *ep, struct rxr_pkt_entry *pkt_entry);
 
-int rxr_read_handle_error(struct rxr_ep *ep, struct rxr_read_entry *read_entry, int ret);
+int rxr_read_handle_error(struct rxr_ep *ep, struct rxr_x_entry *x_entry, int ret);
 
 #endif
 

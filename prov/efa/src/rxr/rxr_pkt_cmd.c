@@ -69,9 +69,9 @@ ssize_t rxr_pkt_post_data(struct rxr_ep *rxr_ep,
 	data_pkt->hdr.rx_id = tx_entry->base.rx_id;
 
 	/*
-	 * Data packets are sent in order so using bytes_sent is okay here.
+	 * Data packets are sent in order so using bytes_submitted is okay here.
 	 */
-	data_pkt->hdr.seg_offset = tx_entry->bytes_sent;
+	data_pkt->hdr.seg_offset = tx_entry->base.bytes_submitted;
 
 	/*
 	 * TODO: Check to see if underlying device can support CUDA
@@ -91,7 +91,7 @@ ssize_t rxr_pkt_post_data(struct rxr_ep *rxr_ep,
 	}
 
 	data_pkt = rxr_get_data_pkt(pkt_entry->pkt);
-	tx_entry->bytes_sent += data_pkt->hdr.seg_size;
+	tx_entry->base.bytes_submitted += data_pkt->hdr.seg_size;
 	tx_entry->window -= data_pkt->hdr.seg_size;
 	assert(data_pkt->hdr.seg_size > 0);
 	assert(tx_entry->window >= 0);
@@ -308,7 +308,7 @@ ssize_t rxr_pkt_post_ctrl(struct rxr_ep *ep, int entry_type, void *x_entry,
 		assert(!inject);
 
 		tx_entry = (struct rxr_tx_entry *)x_entry;
-		while (tx_entry->bytes_sent < tx_entry->base.total_len) {
+		while (tx_entry->base.bytes_submitted < tx_entry->base.total_len) {
 			err = rxr_pkt_post_ctrl_once(ep, RXR_TX_ENTRY, x_entry, ctrl_type, 0);
 			if (OFI_UNLIKELY(err))
 				return err;

@@ -342,6 +342,8 @@ struct rxr_x_entry {
 	uint64_t ignore;
 
 	uint64_t total_len;
+	size_t bytes_submitted; /* bytes that has passed fi_send()/fi_read() */
+	size_t bytes_completed; /* bytes that has received CQ entry */
 
 	struct rxr_atomic_hdr atomic_hdr;
 	struct rxr_queued_ctrl_info queued_ctrl;
@@ -391,7 +393,6 @@ struct rxr_rx_entry {
 	uint32_t rma_loc_tx_id;
 	uint32_t rma_initiator_rx_id;
 
-	uint64_t bytes_done;
 	int64_t window;
 	uint16_t credit_request;
 	int credit_cts;
@@ -427,8 +428,6 @@ struct rxr_tx_entry {
 	/* Must remain at the top */
 	struct rxr_x_entry base;
 
-	uint64_t bytes_acked;
-	uint64_t bytes_sent;
 	int64_t window;
 	uint16_t credit_request;
 	uint16_t credit_allocated;
@@ -551,8 +550,6 @@ struct rxr_ep {
 	struct ofi_bufpool *rx_entry_pool;
 	/* datastructure to maintain read response */
 	struct ofi_bufpool *readrsp_tx_entry_pool;
-	/* data structure to maintain read */
-	struct ofi_bufpool *read_entry_pool;
 	/* data structure to maintain pkt rx map */
 	struct ofi_bufpool *map_entry_pool;
 	/* rxr medium message pkt_entry to rx_entry map */
@@ -688,7 +685,7 @@ struct rxr_tx_entry *rxr_ep_alloc_tx_entry(struct rxr_ep *rxr_ep,
 					   uint64_t tag,
 					   uint64_t flags);
 
-int rxr_tx_entry_mr_dereg(struct rxr_tx_entry *tx_entry);
+int rxr_x_entry_mr_dereg(struct rxr_x_entry *tx_entry);
 
 static inline void rxr_release_tx_entry(struct rxr_ep *ep,
 					struct rxr_tx_entry *tx_entry)
@@ -708,6 +705,7 @@ static inline void rxr_release_tx_entry(struct rxr_ep *ep,
 static inline void rxr_release_rx_entry(struct rxr_ep *ep,
 					struct rxr_rx_entry *rx_entry)
 {
+	rxr_x_entry_mr_dereg(&rx_entry->base);
 #if ENABLE_DEBUG
 	dlist_remove(&rx_entry->rx_entry_entry);
 #endif
@@ -810,9 +808,9 @@ int rxr_ep_post_buf(struct rxr_ep *ep, uint64_t flags, enum rxr_lower_ep_type lo
 int rxr_ep_set_tx_credit_request(struct rxr_ep *rxr_ep,
 				 struct rxr_tx_entry *tx_entry);
 
-int rxr_ep_tx_init_mr_desc(struct rxr_ep *rxr_ep,
-			   struct rxr_tx_entry *tx_entry,
-			   int mr_iov_start, uint64_t access);
+int rxr_ep_init_mr_desc(struct rxr_ep *rxr_ep,
+			struct rxr_x_entry *x_entry,
+			int mr_iov_start, uint64_t access);
 
 void rxr_prepare_desc_send(struct rxr_ep *rxr_ep,
 			   struct rxr_tx_entry *tx_entry);

@@ -775,19 +775,19 @@ void rxr_cq_write_tx_completion(struct rxr_ep *ep,
 	return;
 }
 
-int rxr_tx_entry_mr_dereg(struct rxr_tx_entry *tx_entry)
+int rxr_x_entry_mr_dereg(struct rxr_x_entry *x_entry)
 {
 	int i, err = 0;
 
-	for (i = 0; i < tx_entry->base.iov_count; i++) {
-		if (tx_entry->base.mr[i]) {
-			err = fi_close((struct fid *)tx_entry->base.mr[i]);
+	for (i = 0; i < x_entry->iov_count; i++) {
+		if (x_entry->mr[i]) {
+			err = fi_close((struct fid *)x_entry->mr[i]);
 			if (OFI_UNLIKELY(err)) {
 				FI_WARN(&rxr_prov, FI_LOG_CQ, "mr dereg failed. err=%d\n", err);
 				return err;
 			}
 
-			tx_entry->base.mr[i] = NULL;
+			x_entry->mr[i] = NULL;
 		}
 	}
 
@@ -803,7 +803,7 @@ void rxr_cq_handle_tx_completion(struct rxr_ep *ep, struct rxr_tx_entry *tx_entr
 		dlist_remove(&tx_entry->base.entry);
 
 	if (efa_mr_cache_enable && rxr_ep_mr_local(ep)) {
-		ret = rxr_tx_entry_mr_dereg(tx_entry);
+		ret = rxr_x_entry_mr_dereg(&tx_entry->base);
 		if (OFI_UNLIKELY(ret)) {
 			FI_WARN(&rxr_prov, FI_LOG_MR,
 				"In-line memory deregistration failed with error: %s.\n",
@@ -827,7 +827,7 @@ void rxr_cq_handle_tx_completion(struct rxr_ep *ep, struct rxr_tx_entry *tx_entr
 
 		if (ep->util_ep.caps & FI_RMA_EVENT) {
 			rx_entry->base.cq_entry.len = rx_entry->base.total_len;
-			rx_entry->bytes_done = rx_entry->base.total_len;
+			rx_entry->base.bytes_completed = rx_entry->base.total_len;
 			efa_cntr_report_rx_completion(&ep->util_ep, rx_entry->base.cq_entry.flags);
 		}
 

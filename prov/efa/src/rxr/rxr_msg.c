@@ -101,7 +101,7 @@ ssize_t rxr_msg_post_rtm(struct rxr_ep *rxr_ep, struct rxr_tx_entry *tx_entry)
 		 * because medium message works even if MR registration failed
 		 */
 		if (efa_mr_cache_enable)
-			rxr_ep_tx_init_mr_desc(rxr_ep, tx_entry, 0, FI_SEND);
+			rxr_ep_init_mr_desc(rxr_ep, &tx_entry->base, 0, FI_SEND);
 		return rxr_pkt_post_ctrl_or_queue(rxr_ep, RXR_TX_ENTRY, tx_entry,
 						  RXR_MEDIUM_MSGRTM_PKT + tagged, 0);
 	}
@@ -110,7 +110,7 @@ ssize_t rxr_msg_post_rtm(struct rxr_ep *rxr_ep, struct rxr_tx_entry *tx_entry)
 	    tx_entry->base.total_len > rxr_env.efa_max_long_msg_size &&
 	    (tx_entry->base.desc[0] || efa_mr_cache_enable)) {
 		/* use read message protocol */
-		err = rxr_ep_tx_init_mr_desc(rxr_ep, tx_entry, 0, FI_REMOTE_READ);
+		err = rxr_ep_init_mr_desc(rxr_ep, &tx_entry->base, 0, FI_REMOTE_READ);
 
 		if (!err)
 			return rxr_pkt_post_ctrl_or_queue(rxr_ep, RXR_TX_ENTRY, tx_entry,

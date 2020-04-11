@@ -181,7 +181,7 @@ ssize_t rxr_pkt_init_cts(struct rxr_ep *ep,
 	cts_hdr->tx_id = rx_entry->base.tx_id;
 	cts_hdr->rx_id = rx_entry->base.rx_id;
 
-	bytes_left = rx_entry->base.total_len - rx_entry->bytes_done;
+	bytes_left = rx_entry->base.total_len - rx_entry->base.bytes_completed;
 	peer = rxr_ep_get_peer(ep, rx_entry->base.addr);
 	rxr_pkt_calc_cts_window_credits(ep, peer, bytes_left,
 					rx_entry->credit_request,
@@ -275,10 +275,10 @@ void rxr_pkt_handle_readrsp_sent(struct rxr_ep *ep, struct rxr_pkt_entry *pkt_en
 	tx_entry = (struct rxr_tx_entry *)pkt_entry->x_entry;
 	data_len = rxr_get_readrsp_hdr(pkt_entry->pkt)->seg_size;
 	tx_entry->state = RXR_TX_SENT_READRSP;
-	tx_entry->bytes_sent += data_len;
+	tx_entry->base.bytes_submitted += data_len;
 	tx_entry->window -= data_len;
 	assert(tx_entry->window >= 0);
-	if (tx_entry->bytes_sent < tx_entry->base.total_len) {
+	if (tx_entry->base.bytes_submitted < tx_entry->base.total_len) {
 		assert(!rxr_ep_is_cuda_mr(tx_entry->base.desc[0]));
 		if (efa_mr_cache_enable && rxr_ep_mr_local(ep))
 			rxr_prepare_desc_send(ep, tx_entry);
@@ -300,8 +300,8 @@ void rxr_pkt_handle_readrsp_send_completion(struct rxr_ep *ep,
 	tx_entry = (struct rxr_tx_entry *)pkt_entry->x_entry;
 	assert(tx_entry->base.cq_entry.flags & FI_READ);
 
-	tx_entry->bytes_acked += readrsp_hdr->seg_size;
-	if (tx_entry->base.total_len == tx_entry->bytes_acked)
+	tx_entry->base.bytes_completed += readrsp_hdr->seg_size;
+	if (tx_entry->base.total_len == tx_entry->base.bytes_completed)
 		rxr_cq_handle_tx_completion(ep, tx_entry);
 }
 
@@ -342,14 +342,14 @@ void rxr_pkt_init_write_context(struct rxr_tx_entry *tx_entry,
 }
 
 void rxr_pkt_init_read_context(struct rxr_ep *rxr_ep,
-			       struct rxr_read_entry *read_entry,
+			       struct rxr_x_entry *x_entry,
 			       size_t seg_size,
 			       struct rxr_pkt_entry *pkt_entry)
 {
 	struct rxr_rma_context_pkt *ctx_pkt;
 
-	pkt_entry->x_entry = read_entry;
-	pkt_entry->addr = read_entry->addr;
+	pkt_entry->x_entry = x_entry;
+	pkt_entry->addr = x_entry->addr;
 	pkt_entry->pkt_size = sizeof(struct rxr_rma_context_pkt);
 
 	ctx_pkt = (struct rxr_rma_context_pkt *)pkt_entry->pkt;
@@ -357,7 +357,6 @@ void rxr_pkt_init_read_context(struct rxr_ep *rxr_ep,
 	ctx_pkt->flags = 0;
 	ctx_pkt->version = RXR_BASE_PROTOCOL_VERSION;
 	ctx_pkt->context_type = RXR_READ_CONTEXT;
-	ctx_pkt->read_id = read_entry->read_id;
 	ctx_pkt->seg_size = seg_size;
 }
 
@@ -367,7 +366,7 @@ void rxr_pkt_handle_rma_read_completion(struct rxr_ep *ep,
 {
 	struct rxr_tx_entry *tx_entry;
 	struct rxr_rx_entry *rx_entry;
-	struct rxr_read_entry *read_entry;
+	struct rxr_x_entry *x_entry;
 	struct rxr_rma_context_pkt *rma_context_pkt;
 	struct rxr_peer *peer;
 	int inject;
@@ -377,18 +376,20 @@ void rxr_pkt_handle_rma_read_completion(struct rxr_ep *ep,
 	assert(rma_context_pkt->type == RXR_RMA_CONTEXT_PKT);
 	assert(rma_context_pkt->context_type == RXR_READ_CONTEXT);
 
-	read_entry = (struct rxr_read_entry *)context_pkt_entry->x_entry;
-	read_entry->bytes_finished += rma_context_pkt->seg_size;
-	assert(read_entry->bytes_finished <= read_entry->total_len);
+	x_entry = (struct rxr_x_entry *)context_pkt_entry->x_entry;
+	x_entry->bytes_completed += rma_context_pkt->seg_size;
+	assert(x_entry->bytes_finished <= x_entry->total_len);
 
-	if (read_entry->bytes_finished == read_entry->total_len) {
-		if (read_entry->x_entry_type == RXR_TX_ENTRY) {
-			tx_entry = ofi_bufpool_get_ibuf(ep->tx_entry_pool, read_entry->x_entry_id);
+	peer = rxr_ep_get_peer(ep, context_pkt_entry->addr);
+	assert(peer);
+	if (x_entry->bytes_completed == x_entry->total_len) {
+		if (x_entry->type == RXR_TX_ENTRY) {
+			tx_entry = ofi_bufpool_get_ibuf(ep->tx_entry_pool, x_entry->tx_id);
 			assert(tx_entry && tx_entry->base.cq_entry.flags & FI_READ);
 			rxr_cq_write_tx_completion(ep, tx_entry);
 		} else {
-			inject = (read_entry->lower_ep_type == SHM_EP);
-			rx_entry = ofi_bufpool_get_ibuf(ep->rx_entry_pool, read_entry->x_entry_id);
+			inject = (peer->is_local);
+			rx_entry = ofi_bufpool_get_ibuf(ep->rx_entry_pool, x_entry->rx_id);
 			ret = rxr_pkt_post_ctrl_or_queue(ep, RXR_RX_ENTRY, rx_entry, RXR_EOR_PKT, inject);
 			if (OFI_UNLIKELY(ret)) {
 				if (rxr_cq_handle_rx_error(ep, rx_entry, ret))
@@ -411,11 +412,8 @@ void rxr_pkt_handle_rma_read_completion(struct rxr_ep *ep,
 				rxr_release_rx_entry(ep, rx_entry);
 			}
 		}
-
-		rxr_read_release_entry(ep, read_entry);
 	}
 
-	peer = rxr_ep_get_peer(ep, context_pkt_entry->addr);
 	if (!peer->is_local)
 		rxr_ep_dec_tx_pending(ep, peer, 0);
 }
@@ -507,7 +505,7 @@ void rxr_pkt_handle_eor_recv(struct rxr_ep *ep,
 	/* pre-post buf used here, so can NOT track back to tx_entry with x_entry */
 	tx_entry = ofi_bufpool_get_ibuf(ep->tx_entry_pool, eor_hdr->tx_id);
 
-	err = rxr_tx_entry_mr_dereg(tx_entry);
+	err = rxr_x_entry_mr_dereg(&tx_entry->base);
 	if (OFI_UNLIKELY(err)) {
 		if (rxr_cq_handle_tx_error(ep, tx_entry, err))
 			assert(0 && "failed to write err cq entry");

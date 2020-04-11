@@ -231,12 +231,12 @@ size_t rxr_pkt_req_copy_data(struct rxr_rx_entry *rx_entry,
 		/* recv buffer is not big enough to hold req, this must be a truncated message */
 		assert(bytes_copied == rx_entry->base.cq_entry.len &&
 		       rx_entry->base.cq_entry.len < rx_entry->base.total_len);
-		rx_entry->bytes_done = bytes_copied;
+		rx_entry->base.bytes_completed = bytes_copied;
 		bytes_left = 0;
 	} else {
 		assert(bytes_copied == data_size);
-		rx_entry->bytes_done = data_size;
-		bytes_left = rx_entry->base.total_len - rx_entry->bytes_done;
+		rx_entry->base.bytes_completed = data_size;
+		bytes_left = rx_entry->base.total_len - rx_entry->base.bytes_completed;
 	}
 
 	assert(bytes_left >= 0);
@@ -341,10 +341,10 @@ ssize_t rxr_pkt_init_medium_msgrtm(struct rxr_ep *ep,
 	struct rxr_medium_rtm_base_hdr *rtm_hdr;
 
 	rxr_pkt_init_rtm(ep, tx_entry, RXR_MEDIUM_MSGRTM_PKT,
-			 tx_entry->bytes_sent, pkt_entry);
+			 tx_entry->base.bytes_submitted, pkt_entry);
 	rtm_hdr = rxr_get_medium_rtm_base_hdr(pkt_entry->pkt);
 	rtm_hdr->data_len = tx_entry->base.total_len;
-	rtm_hdr->offset = tx_entry->bytes_sent;
+	rtm_hdr->offset = tx_entry->base.bytes_submitted;
 	return 0;
 }
 
@@ -355,10 +355,10 @@ ssize_t rxr_pkt_init_medium_tagrtm(struct rxr_ep *ep,
 	struct rxr_medium_rtm_base_hdr *rtm_hdr;
 
 	rxr_pkt_init_rtm(ep, tx_entry, RXR_MEDIUM_TAGRTM_PKT,
-			 tx_entry->bytes_sent, pkt_entry);
+			 tx_entry->base.bytes_submitted, pkt_entry);
 	rtm_hdr = rxr_get_medium_rtm_base_hdr(pkt_entry->pkt);
 	rtm_hdr->data_len = tx_entry->base.total_len;
-	rtm_hdr->offset = tx_entry->bytes_sent;
+	rtm_hdr->offset = tx_entry->base.bytes_submitted;
 	rtm_hdr->hdr.flags |= RXR_REQ_TAGGED;
 	rxr_pkt_rtm_settag(pkt_entry, tx_entry->base.tag);
 	return 0;
@@ -463,7 +463,7 @@ void rxr_pkt_handle_medium_rtm_sent(struct rxr_ep *ep,
 	struct rxr_tx_entry *tx_entry;
 
 	tx_entry = (struct rxr_tx_entry *)pkt_entry->x_entry;
-	tx_entry->bytes_sent += rxr_pkt_req_data_size(pkt_entry);
+	tx_entry->base.bytes_submitted += rxr_pkt_req_data_size(pkt_entry);
 }
 
 void rxr_pkt_handle_long_rtm_sent(struct rxr_ep *ep,
@@ -472,8 +472,8 @@ void rxr_pkt_handle_long_rtm_sent(struct rxr_ep *ep,
 	struct rxr_tx_entry *tx_entry;
 
 	tx_entry = (struct rxr_tx_entry *)pkt_entry->x_entry;
-	tx_entry->bytes_sent += rxr_pkt_req_data_size(pkt_entry);
-	assert(tx_entry->bytes_sent < tx_entry->base.total_len);
+	tx_entry->base.bytes_submitted += rxr_pkt_req_data_size(pkt_entry);
+	assert(tx_entry->base.bytes_submitted < tx_entry->base.total_len);
 
 	if (efa_mr_cache_enable || rxr_ep_is_cuda_mr(tx_entry->base.desc[0]))
 		rxr_prepare_desc_send(ep, tx_entry);
@@ -498,8 +498,8 @@ void rxr_pkt_handle_medium_rtm_send_completion(struct rxr_ep *ep,
 	struct rxr_tx_entry *tx_entry;
 
 	tx_entry = (struct rxr_tx_entry *)pkt_entry->x_entry;
-	tx_entry->bytes_acked += rxr_pkt_req_data_size(pkt_entry);
-	if (tx_entry->base.total_len == tx_entry->bytes_acked)
+	tx_entry->base.bytes_completed += rxr_pkt_req_data_size(pkt_entry);
+	if (tx_entry->base.total_len == tx_entry->base.bytes_completed)
 		rxr_cq_handle_tx_completion(ep, tx_entry);
 }
 
@@ -509,8 +509,8 @@ void rxr_pkt_handle_long_rtm_send_completion(struct rxr_ep *ep,
 	struct rxr_tx_entry *tx_entry;
 
 	tx_entry = (struct rxr_tx_entry *)pkt_entry->x_entry;
-	tx_entry->bytes_acked += rxr_pkt_req_data_size(pkt_entry);
-	if (tx_entry->base.total_len == tx_entry->bytes_acked)
+	tx_entry->base.bytes_completed += rxr_pkt_req_data_size(pkt_entry);
+	if (tx_entry->base.total_len == tx_entry->base.bytes_completed)
 		rxr_cq_handle_tx_completion(ep, tx_entry);
 }
 
@@ -734,7 +734,8 @@ ssize_t rxr_pkt_proc_matched_read_rtm(struct rxr_ep *ep,
 	 * need to do memory registration for the receiving buffer.
 	 */
 	ofi_truncate_iov(rx_entry->base.iov, &rx_entry->base.iov_count, rx_entry->base.total_len);
-	return rxr_read_post_or_queue(ep, RXR_RX_ENTRY, rx_entry);
+
+	return rxr_read_post_or_queue(ep, &rx_entry->base);
 }
 
 ssize_t rxr_pkt_proc_matched_medium_rtm(struct rxr_ep *ep,
@@ -751,11 +752,11 @@ ssize_t rxr_pkt_proc_matched_medium_rtm(struct rxr_ep *ep,
 		offset = rxr_get_medium_rtm_base_hdr(cur->pkt)->offset;
 		data_size = cur->pkt_size - cur->hdr_size;
 		rxr_copy_to_rx(data, data_size, rx_entry, offset);
-		rx_entry->bytes_done += data_size;
+		rx_entry->base.bytes_completed += data_size;
 		cur = cur->next;
 	}
 
-	if (rx_entry->base.total_len == rx_entry->bytes_done) {
+	if (rx_entry->base.total_len == rx_entry->base.bytes_completed) {
 		rxr_pkt_rx_map_remove(ep, pkt_entry, rx_entry);
 		/*
 		 * rxr_cq_handle_rx_completion() releases pkt_entry, thus
@@ -1126,8 +1127,8 @@ void rxr_pkt_handle_long_rtw_sent(struct rxr_ep *ep,
 	struct rxr_tx_entry *tx_entry;
 
 	tx_entry = (struct rxr_tx_entry *)pkt_entry->x_entry;
-	tx_entry->bytes_sent += rxr_pkt_req_data_size(pkt_entry);
-	assert(tx_entry->bytes_sent < tx_entry->base.total_len);
+	tx_entry->base.bytes_submitted += rxr_pkt_req_data_size(pkt_entry);
+	assert(tx_entry->base.bytes_submitted < tx_entry->base.total_len);
 	if (efa_mr_cache_enable || rxr_ep_is_cuda_mr(tx_entry->base.desc[0]))
 		rxr_prepare_desc_send(ep, tx_entry);
 }
@@ -1151,8 +1152,8 @@ void rxr_pkt_handle_long_rtw_send_completion(struct rxr_ep *ep,
 	struct rxr_tx_entry *tx_entry;
 
 	tx_entry = (struct rxr_tx_entry *)pkt_entry->x_entry;
-	tx_entry->bytes_acked += rxr_pkt_req_data_size(pkt_entry);
-	if (tx_entry->base.total_len == tx_entry->bytes_acked)
+	tx_entry->base.bytes_completed += rxr_pkt_req_data_size(pkt_entry);
+	if (tx_entry->base.total_len == tx_entry->base.bytes_completed)
 		rxr_cq_handle_tx_completion(ep, tx_entry);
 }
 
@@ -1181,7 +1182,7 @@ struct rxr_rx_entry *rxr_pkt_alloc_rtw_rx_entry(struct rxr_ep *ep,
 	}
 
 	rx_entry->base.addr = pkt_entry->addr;
-	rx_entry->bytes_done = 0;
+	rx_entry->base.bytes_completed = 0;
 	return rx_entry;
 }
 
@@ -1348,7 +1349,7 @@ void rxr_pkt_handle_read_rtw_recv(struct rxr_ep *ep,
 	       rx_entry->base.rma_iov_count * sizeof(struct fi_rma_iov));
 
 	rxr_pkt_entry_release_rx(ep, pkt_entry);
-	err = rxr_read_post_or_queue(ep, RXR_RX_ENTRY, rx_entry);
+	err = rxr_read_post_or_queue(ep, &rx_entry->base);
 	if (OFI_UNLIKELY(err)) {
 		FI_WARN(&rxr_prov, FI_LOG_CQ,
 			"RDMA post read or queue failed.\n");
@@ -1412,7 +1413,7 @@ void rxr_pkt_handle_rtr_sent(struct rxr_ep *ep,
 	struct rxr_tx_entry *tx_entry;
 
 	tx_entry = (struct rxr_tx_entry *)pkt_entry->x_entry;
-	tx_entry->bytes_sent = 0;
+	tx_entry->base.bytes_submitted = 0;
 	tx_entry->state = RXR_TX_WAIT_READ_FINISH;
 }
 
@@ -1452,7 +1453,7 @@ void rxr_pkt_handle_rtr_recv(struct rxr_ep *ep, struct rxr_pkt_entry *pkt_entry)
 	}
 
 	rx_entry->base.addr = pkt_entry->addr;
-	rx_entry->bytes_done = 0;
+	rx_entry->base.bytes_completed = 0;
 	rx_entry->base.cq_entry.flags |= (FI_RMA | FI_READ);
 	rx_entry->base.cq_entry.len = ofi_total_iov_len(rx_entry->base.iov, rx_entry->base.iov_count);
 	rx_entry->base.cq_entry.buf = rx_entry->base.iov[0].iov_base;

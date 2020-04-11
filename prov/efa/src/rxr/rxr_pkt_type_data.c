@@ -55,14 +55,14 @@ ssize_t rxr_pkt_send_data(struct rxr_ep *ep,
 	pkt_entry->x_entry = (void *)tx_entry;
 	pkt_entry->addr = tx_entry->base.addr;
 
-	payload_size = MIN(tx_entry->base.total_len - tx_entry->bytes_sent,
+	payload_size = MIN(tx_entry->base.total_len - tx_entry->base.bytes_submitted,
 			   ep->max_data_payload_size);
 	payload_size = MIN(payload_size, tx_entry->window);
 
 	data_pkt = (struct rxr_data_pkt *)pkt_entry->pkt;
 	data_pkt->hdr.seg_size = payload_size;
 
-	copied_size = rxr_copy_from_tx(data_pkt->data, payload_size, tx_entry, tx_entry->bytes_sent);
+	copied_size = rxr_copy_from_tx(data_pkt->data, payload_size, tx_entry, tx_entry->base.bytes_submitted);
 	assert(copied_size == payload_size);
 
 	pkt_entry->pkt_size = copied_size + sizeof(struct rxr_data_hdr);
@@ -214,10 +214,10 @@ void rxr_pkt_handle_data_send_completion(struct rxr_ep *ep,
 	struct rxr_tx_entry *tx_entry;
 
 	tx_entry = (struct rxr_tx_entry *)pkt_entry->x_entry;
-	tx_entry->bytes_acked +=
+	tx_entry->base.bytes_completed +=
 		rxr_get_data_pkt(pkt_entry->pkt)->hdr.seg_size;
 
-	if (tx_entry->base.total_len == tx_entry->bytes_acked)
+	if (tx_entry->base.total_len == tx_entry->base.bytes_completed)
 		rxr_cq_handle_tx_completion(ep, tx_entry);
 }
 
@@ -252,7 +252,7 @@ int rxr_pkt_proc_data(struct rxr_ep *ep,
 		}
 	}
 
-	rx_entry->bytes_done += seg_size;
+	rx_entry->base.bytes_completed += seg_size;
 
 	peer = rxr_ep_get_peer(ep, rx_entry->base.addr);
 	peer->rx_credits += ofi_div_ceil(seg_size, ep->max_data_payload_size);
@@ -261,13 +261,13 @@ int rxr_pkt_proc_data(struct rxr_ep *ep,
 	if (ep->available_data_bufs < rxr_get_rx_pool_chunk_cnt(ep))
 		ep->available_data_bufs++;
 
-	/* bytes_done is total bytes sent/received, which could be larger than
+	/* bytes_completed is total bytes sent/received, which could be larger than
 	 * to bytes copied to recv buffer (for truncated messages).
 	 * rx_entry->base.total_len is from rtm header and is the size of send buffer,
 	 * thus we always have:
-	 *             rx_entry->total >= rx_entry->bytes_done
+	 *             rx_entry->total >= rx_entry->bytes_complted
 	 */
-	bytes_left = rx_entry->base.total_len - rx_entry->bytes_done;
+	bytes_left = rx_entry->base.total_len - rx_entry->base.bytes_completed;
 	assert(bytes_left >= 0);
 	if (!bytes_left) {
 #if ENABLE_DEBUG

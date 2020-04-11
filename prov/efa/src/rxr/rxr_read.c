@@ -37,160 +37,24 @@
 #include "rxr_cntr.h"
 #include "rxr_read.h"
 
-struct rxr_read_entry *rxr_read_alloc_entry(struct rxr_ep *ep, int entry_type, void *x_entry,
-					    enum rxr_lower_ep_type lower_ep_type)
-{
-	struct rxr_tx_entry *tx_entry = NULL;
-	struct rxr_rx_entry *rx_entry = NULL;
-	struct rxr_read_entry *read_entry;
-	int i, err;
-	size_t total_iov_len, total_rma_iov_len;
-	void **mr_desc;
-
-	read_entry = ofi_buf_alloc(ep->read_entry_pool);
-	if (OFI_UNLIKELY(!read_entry)) {
-		FI_WARN(&rxr_prov, FI_LOG_EP_CTRL, "RDMA entries exhausted\n");
-		return NULL;
-	}
-
-	read_entry->read_id = ofi_buf_index(read_entry);
-	read_entry->state = RXR_RDMA_ENTRY_CREATED;
-	read_entry->x_entry_type = entry_type;
-
-	if (entry_type == RXR_TX_ENTRY) {
-		tx_entry = (struct rxr_tx_entry *)x_entry;
-		assert(tx_entry->base.op == ofi_op_read_req);
-		read_entry->x_entry_id = tx_entry->base.tx_id;
-		read_entry->addr = tx_entry->base.addr;
-
-		read_entry->iov_count = tx_entry->base.iov_count;
-		read_entry->iov = tx_entry->base.iov;
-
-		read_entry->rma_iov_count = tx_entry->base.rma_iov_count;
-		read_entry->rma_iov = tx_entry->base.rma_iov;
-
-		total_iov_len = ofi_total_iov_len(tx_entry->base.iov, tx_entry->base.iov_count);
-		total_rma_iov_len = ofi_total_rma_iov_len(tx_entry->base.rma_iov, tx_entry->base.rma_iov_count);
-		read_entry->total_len = MIN(total_iov_len, total_rma_iov_len);
-		mr_desc = tx_entry->base.desc;
-	} else {
-		rx_entry = (struct rxr_rx_entry *)x_entry;
-		assert(rx_entry->base.op == ofi_op_write || rx_entry->base.op == ofi_op_msg ||
-		       rx_entry->base.op == ofi_op_tagged);
-
-		read_entry->x_entry_id = rx_entry->base.rx_id;
-		read_entry->addr = rx_entry->base.addr;
-
-		read_entry->iov_count = rx_entry->base.iov_count;
-		read_entry->iov = rx_entry->base.iov;
-
-		read_entry->rma_iov_count = rx_entry->base.rma_iov_count;
-		read_entry->rma_iov = rx_entry->base.rma_iov;
-
-		mr_desc = rx_entry->base.desc;
-		total_iov_len = ofi_total_iov_len(rx_entry->base.iov, rx_entry->base.iov_count);
-		total_rma_iov_len = ofi_total_rma_iov_len(rx_entry->base.rma_iov, rx_entry->base.rma_iov_count);
-		read_entry->total_len = MIN(total_iov_len, total_rma_iov_len);
-	}
-
-	if (lower_ep_type == EFA_EP) {
-		/* EFA provider need local buffer registration */
-		for (i = 0; i < read_entry->iov_count; ++i) {
-			if (mr_desc && mr_desc[i]) {
-				read_entry->mr[i] = NULL;
-				read_entry->mr_desc[i] = mr_desc[i];
-			} else {
-				err = fi_mr_reg(rxr_ep_domain(ep)->rdm_domain,
-						read_entry->iov[i].iov_base, read_entry->iov[i].iov_len,
-						FI_RECV, 0, 0, 0, &read_entry->mr[i], NULL);
-
-				if (err == -FI_ENOMEM && efa_mr_cache_enable) {
-					/* In this case, we will try registration one more time because
-					 * mr cache will try to release MR when encountered error
-					 */
-					FI_WARN(&rxr_prov, FI_LOG_MR, "Unable to register MR buf for FI_ENOMEM!\n");
-					FI_WARN(&rxr_prov, FI_LOG_MR, "Try again because MR cache will try release to release unused MR entry.\n");
-					err = fi_mr_reg(rxr_ep_domain(ep)->rdm_domain,
-							read_entry->iov[i].iov_base, read_entry->iov[i].iov_len,
-							FI_RECV, 0, 0, 0, &read_entry->mr[i], NULL);
-					if (!err)
-						FI_WARN(&rxr_prov, FI_LOG_MR, "The 2nd attemp was successful!");
-				}
-
-				if (err) {
-					FI_WARN(&rxr_prov, FI_LOG_MR, "Unable to register MR buf\n");
-					return NULL;
-				}
-
-				read_entry->mr_desc[i] = fi_mr_desc(read_entry->mr[i]);
-			}
-		}
-	} else {
-		assert(lower_ep_type == SHM_EP);
-		memset(read_entry->mr, 0, read_entry->iov_count * sizeof(struct fid_mr *));
-		/* FI_MR_VIRT_ADDR is not being set, use 0-based offset instead. */
-		if (!(shm_info->domain_attr->mr_mode & FI_MR_VIRT_ADDR)) {
-			for (i = 0; i < read_entry->rma_iov_count; ++i)
-				read_entry->rma_iov[i].addr = 0;
-		}
-	}
-
-	read_entry->lower_ep_type = lower_ep_type;
-	read_entry->bytes_submitted = 0;
-	read_entry->bytes_finished = 0;
-	return read_entry;
-}
-
-void rxr_read_release_entry(struct rxr_ep *ep, struct rxr_read_entry *read_entry)
-{
-	int i, err;
-
-	for (i = 0; i < read_entry->iov_count; ++i) {
-		if (read_entry->mr[i]) {
-			err = fi_close((struct fid *)read_entry->mr[i]);
-			if (err) {
-				FI_WARN(&rxr_prov, FI_LOG_MR, "Unable to close mr\n");
-				rxr_read_handle_error(ep, read_entry, err);
-			}
-		}
-	}
-
-#ifdef ENABLE_EFA_POISONING
-	rxr_poison_mem_region((uint32_t *)read_entry, sizeof(struct rxr_read_entry));
-#endif
-	read_entry->state = RXR_RDMA_ENTRY_FREE;
-	ofi_buf_free(read_entry);
-}
-
-int rxr_read_post_or_queue(struct rxr_ep *ep, int entry_type, void *x_entry)
+int rxr_read_post_or_queue(struct rxr_ep *ep, struct rxr_x_entry *x_entry)
 {
 	struct rxr_peer *peer;
-	struct rxr_read_entry *read_entry;
-	int err, lower_ep_type;
+	int err;
 
-	if (entry_type == RXR_TX_ENTRY) {
-		peer = rxr_ep_get_peer(ep, ((struct rxr_x_entry *)x_entry)->addr);
-	} else {
-		assert(entry_type == RXR_RX_ENTRY);
-		peer = rxr_ep_get_peer(ep, ((struct rxr_x_entry *)x_entry)->addr);
-	}
-
+	peer = rxr_ep_get_peer(ep, x_entry->addr);
 	assert(peer);
-	lower_ep_type = (peer->is_local) ? SHM_EP : EFA_EP;
-	read_entry = rxr_read_alloc_entry(ep, entry_type, x_entry, lower_ep_type);
-	if (!read_entry) {
-		FI_WARN(&rxr_prov, FI_LOG_CQ,
-			"RDMA entries exhausted.\n");
-		return -FI_ENOBUFS;
+	if (!peer->is_local) {
+		err = rxr_ep_init_mr_desc(ep, x_entry, 0, FI_RECV);
+		if (err)
+			return err;
 	}
 
-	err = rxr_read_post(ep, read_entry);
+	err = rxr_read_post(ep, x_entry);
 	if (err == -FI_EAGAIN) {
-		dlist_insert_tail(&read_entry->pending_entry, &ep->read_pending_list);
-		read_entry->state = RXR_RDMA_ENTRY_PENDING;
+		dlist_insert_tail(&x_entry->queued_entry, &ep->read_pending_list);
 		err = 0;
 	} else if(err) {
-		rxr_read_release_entry(ep, read_entry);
 		FI_WARN(&rxr_prov, FI_LOG_CQ,
 			"RDMA post read failed. errno=%d.\n", err);
 	}
@@ -216,7 +80,7 @@ int rxr_read_init_iov(struct rxr_ep *ep,
 	return 0;
 }
 
-int rxr_read_post(struct rxr_ep *ep, struct rxr_read_entry *read_entry)
+int rxr_read_post(struct rxr_ep *ep, struct rxr_x_entry *x_entry)
 {
 	int ret;
 	size_t iov_idx = 0, rma_iov_idx = 0;
@@ -229,56 +93,56 @@ int rxr_read_post(struct rxr_ep *ep, struct rxr_read_entry *read_entry)
 	struct fid_ep *lower_ep;
 	fi_addr_t lower_ep_addr;
 
-	assert(read_entry->iov_count > 0);
-	assert(read_entry->rma_iov_count > 0);
-	assert(read_entry->bytes_submitted < read_entry->total_len);
+	assert(x_entry->iov_count > 0);
+	assert(x_entry->rma_iov_count > 0);
+	assert(x_entry->bytes_submitted < x_entry->total_len);
 
-	peer = rxr_ep_get_peer(ep, read_entry->addr);
-	if (read_entry->lower_ep_type == EFA_EP) {
-		max_read_size = efa_max_rdma_size(ep->rdm_ep);
-		lower_ep = ep->rdm_ep;
-		lower_ep_addr = read_entry->addr;
-	} else {
+	peer = rxr_ep_get_peer(ep, x_entry->addr);
+	if (peer->is_local) {
 		max_read_size = SIZE_MAX;
 		lower_ep = ep->shm_ep;
 		lower_ep_addr = peer->shm_fiaddr;
-	}
+	} else {
+		max_read_size = efa_max_rdma_size(ep->rdm_ep);
+		lower_ep = ep->rdm_ep;
+		lower_ep_addr = x_entry->addr;
+	} 
 	assert(max_read_size > 0);
 
-	ret = ofi_locate_iov(read_entry->iov, read_entry->iov_count,
-			     read_entry->bytes_submitted,
+	ret = ofi_locate_iov(x_entry->iov, x_entry->iov_count,
+			     x_entry->bytes_submitted,
 			     &iov_idx, &iov_offset);
 	assert(ret == 0);
 
-	ret = ofi_locate_rma_iov(read_entry->rma_iov, read_entry->rma_iov_count,
-				 read_entry->bytes_submitted,
+	ret = ofi_locate_rma_iov(x_entry->rma_iov, x_entry->rma_iov_count,
+				 x_entry->bytes_submitted,
 				 &rma_iov_idx, &rma_iov_offset);
 	assert(ret == 0);
 
-	total_iov_len = ofi_total_iov_len(read_entry->iov, read_entry->iov_count);
-	total_rma_iov_len = ofi_total_rma_iov_len(read_entry->rma_iov, read_entry->rma_iov_count);
-	assert(read_entry->total_len == MIN(total_iov_len, total_rma_iov_len));
+	total_iov_len = ofi_total_iov_len(x_entry->iov, x_entry->iov_count);
+	total_rma_iov_len = ofi_total_rma_iov_len(x_entry->rma_iov, x_entry->rma_iov_count);
+	assert(x_entry->total_len == MIN(total_iov_len, total_rma_iov_len));
 
-	while (read_entry->bytes_submitted < read_entry->total_len) {
-		assert(iov_idx < read_entry->iov_count);
-		assert(iov_offset < read_entry->iov[iov_idx].iov_len);
-		assert(rma_iov_idx < read_entry->rma_iov_count);
-		assert(rma_iov_offset < read_entry->rma_iov[rma_iov_idx].len);
+	while (x_entry->bytes_submitted < x_entry->total_len) {
+		assert(iov_idx < x_entry->iov_count);
+		assert(iov_offset < x_entry->iov[iov_idx].iov_len);
+		assert(rma_iov_idx < x_entry->rma_iov_count);
+		assert(rma_iov_offset < x_entry->rma_iov[rma_iov_idx].len);
 
-		iov_ptr = (char *)read_entry->iov[iov_idx].iov_base + iov_offset;
-		rma_iov_ptr = (char *)read_entry->rma_iov[rma_iov_idx].addr + rma_iov_offset;
+		iov_ptr = (char *)x_entry->iov[iov_idx].iov_base + iov_offset;
+		rma_iov_ptr = (char *)x_entry->rma_iov[rma_iov_idx].addr + rma_iov_offset;
 
-		max_iov_segsize = read_entry->iov[iov_idx].iov_len - iov_offset;
-		max_rma_iov_segsize = read_entry->rma_iov[rma_iov_idx].len - rma_iov_offset;
+		max_iov_segsize = x_entry->iov[iov_idx].iov_len - iov_offset;
+		max_rma_iov_segsize = x_entry->rma_iov[rma_iov_idx].len - rma_iov_offset;
 		segsize = MIN(max_iov_segsize, max_rma_iov_segsize);
-		if (read_entry->lower_ep_type == EFA_EP)
+		if (!peer->is_local)
 			segsize = MIN(segsize, rxr_env.efa_read_segment_size);
 		segsize = MIN(segsize, max_read_size);
 
 		/* because fi_send uses a pkt_entry as context
 		 * we had to use a pkt_entry as context too
 		 */
-		if (read_entry->lower_ep_type == SHM_EP)
+		if (peer->is_local)
 			pkt_entry = rxr_pkt_entry_alloc(ep, ep->tx_pkt_shm_pool);
 		else
 			pkt_entry = rxr_pkt_entry_alloc(ep, ep->tx_pkt_efa_pool);
@@ -286,12 +150,12 @@ int rxr_read_post(struct rxr_ep *ep, struct rxr_read_entry *read_entry)
 		if (OFI_UNLIKELY(!pkt_entry))
 			return -FI_EAGAIN;
 
-		rxr_pkt_init_read_context(ep, read_entry, segsize, pkt_entry);
+		rxr_pkt_init_read_context(ep, x_entry, segsize, pkt_entry);
 
 		ret = fi_read(lower_ep,
-			      iov_ptr, segsize, read_entry->mr_desc[iov_idx],
+			      iov_ptr, segsize, x_entry->desc[iov_idx],
 			      lower_ep_addr,
-			      (uint64_t)rma_iov_ptr, read_entry->rma_iov[rma_iov_idx].key,
+			      (uint64_t)rma_iov_ptr, x_entry->rma_iov[rma_iov_idx].key,
 			      pkt_entry);
 
 		if (OFI_UNLIKELY(ret)) {
@@ -301,51 +165,51 @@ int rxr_read_post(struct rxr_ep *ep, struct rxr_read_entry *read_entry)
 
 		if (!peer->is_local)
 			rxr_ep_inc_tx_pending(ep, peer);
-		read_entry->bytes_submitted += segsize;
+		x_entry->bytes_submitted += segsize;
 
 		iov_offset += segsize;
-		assert(iov_offset <= read_entry->iov[iov_idx].iov_len);
-		if (iov_offset == read_entry->iov[iov_idx].iov_len) {
+		assert(iov_offset <= x_entry->iov[iov_idx].iov_len);
+		if (iov_offset == x_entry->iov[iov_idx].iov_len) {
 			iov_idx += 1;
 			iov_offset = 0;
 		}
 
 		rma_iov_offset += segsize;
-		assert(rma_iov_offset <= read_entry->rma_iov[rma_iov_idx].len);
-		if (rma_iov_offset == read_entry->rma_iov[rma_iov_idx].len) {
+		assert(rma_iov_offset <= x_entry->rma_iov[rma_iov_idx].len);
+		if (rma_iov_offset == x_entry->rma_iov[rma_iov_idx].len) {
 			rma_iov_idx += 1;
 			rma_iov_offset = 0;
 		}
 	}
 
-	if (read_entry->total_len == total_iov_len) {
-		assert(iov_idx == read_entry->iov_count);
+	if (x_entry->total_len == total_iov_len) {
+		assert(iov_idx == x_entry->iov_count);
 		assert(iov_offset == 0);
 	}
 
-	if (read_entry->total_len == total_rma_iov_len) {
-		assert(rma_iov_idx == read_entry->rma_iov_count);
+	if (x_entry->total_len == total_rma_iov_len) {
+		assert(rma_iov_idx == x_entry->rma_iov_count);
 		assert(rma_iov_offset == 0);
 	}
 
 	return 0;
 }
 
-int rxr_read_handle_error(struct rxr_ep *ep, struct rxr_read_entry *read_entry, int ret)
+int rxr_read_handle_error(struct rxr_ep *ep, struct rxr_x_entry *x_entry, int ret)
 {
 	struct rxr_tx_entry *tx_entry;
 	struct rxr_rx_entry *rx_entry;
 
-	if (read_entry->x_entry_type == RXR_TX_ENTRY) {
-		tx_entry = ofi_bufpool_get_ibuf(ep->tx_entry_pool, read_entry->x_entry_id);
+	if (x_entry->type == RXR_TX_ENTRY) {
+		tx_entry = ofi_bufpool_get_ibuf(ep->tx_entry_pool, x_entry->tx_id);
 		ret = rxr_cq_handle_tx_error(ep, tx_entry, ret);
 	} else {
-		assert(read_entry->x_entry_type == RXR_RX_ENTRY);
-		rx_entry = ofi_bufpool_get_ibuf(ep->rx_entry_pool, read_entry->x_entry_id);
+		assert(x_entry->x_entry_type == RXR_RX_ENTRY);
+		rx_entry = ofi_bufpool_get_ibuf(ep->rx_entry_pool, x_entry->rx_id);
 		ret = rxr_cq_handle_rx_error(ep, rx_entry, ret);
 	}
 
-	dlist_remove(&read_entry->pending_entry);
+	dlist_remove(&x_entry->queued_entry);
 	return ret;
 }
 

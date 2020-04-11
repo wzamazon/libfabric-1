@@ -59,7 +59,7 @@ struct rxr_rx_entry *rxr_ep_rx_entry_init(struct rxr_ep *ep,
 	rx_entry->base.addr = msg->addr;
 	rx_entry->base.fi_flags = flags;
 	rx_entry->rxr_flags = 0;
-	rx_entry->bytes_done = 0;
+	rx_entry->base.bytes_completed = 0;
 	rx_entry->window = 0;
 	rx_entry->base.iov_count = msg->iov_count;
 	rx_entry->base.tag = tag;
@@ -354,8 +354,8 @@ void rxr_tx_entry_init(struct rxr_ep *ep, struct rxr_tx_entry *tx_entry,
 	tx_entry->base.addr = msg->addr;
 
 	tx_entry->send_flags = 0;
-	tx_entry->bytes_acked = 0;
-	tx_entry->bytes_sent = 0;
+	tx_entry->base.bytes_submitted = 0;
+	tx_entry->base.bytes_completed = 0;
 	tx_entry->window = 0;
 	tx_entry->base.total_len = ofi_total_iov_len(msg->msg_iov, msg->iov_count);
 	tx_entry->base.iov_count = msg->iov_count;
@@ -442,43 +442,61 @@ struct rxr_tx_entry *rxr_ep_alloc_tx_entry(struct rxr_ep *rxr_ep,
 	return tx_entry;
 }
 
-int rxr_ep_tx_init_mr_desc(struct rxr_ep *rxr_ep,
-			   struct rxr_tx_entry *tx_entry,
-			   int mr_iov_start, uint64_t access)
+int rxr_ep_init_mr_desc(struct rxr_ep *rxr_ep,
+			struct rxr_x_entry *x_entry,
+			int mr_iov_start, uint64_t access)
 {
 	int i, err, ret;
 	struct rxr_peer *peer;
 
-	peer = rxr_ep_get_peer(rxr_ep, tx_entry->base.addr);
+	assert(access == FI_REMOTE_READ || access == FI_SEND || access == FI_RECV);
+
+	peer = rxr_ep_get_peer(rxr_ep, x_entry->addr);
 	assert(peer);
 
 	ret = 0;
-	for (i = mr_iov_start; i < tx_entry->base.iov_count; ++i) {
-		if (tx_entry->base.desc[i]) {
-			assert(!tx_entry->base.mr[i]);
+	for (i = mr_iov_start; i < x_entry->iov_count; ++i) {
+		if (x_entry->desc[i]) {
+			assert(!x_entry->mr[i]);
 			continue;
 		}
 
-		if (peer->is_local)
+		if (peer->is_local) {
+			assert(access == FI_REMOTE_READ);
 			err = efa_mr_reg_shm(rxr_ep_domain(rxr_ep)->rdm_domain,
-					     tx_entry->base.iov + i,
-					     access, &tx_entry->base.mr[i]);
-		else
+					     x_entry->iov + i,
+					     access, &x_entry->mr[i]);
+		} else {
 			err = fi_mr_reg(rxr_ep_domain(rxr_ep)->rdm_domain,
-					tx_entry->base.iov[i].iov_base,
-					tx_entry->base.iov[i].iov_len,
+					x_entry->iov[i].iov_base,
+					x_entry->iov[i].iov_len,
 					access, 0, 0, 0,
-					&tx_entry->base.mr[i], NULL);
+					&x_entry->mr[i], NULL);
+
+			if (err == -FI_ENOMEM && efa_mr_cache_enable) {
+				/* In this case, we will try registration one more time because
+				 * mr cache will try to release MR when encountered error
+				 */
+				FI_WARN(&rxr_prov, FI_LOG_MR, "Unable to register MR buf for FI_ENOMEM!\n");
+				FI_WARN(&rxr_prov, FI_LOG_MR, "Try again because MR cache will try release to release unused MR entry.\n");
+				err = fi_mr_reg(rxr_ep_domain(rxr_ep)->rdm_domain,
+						x_entry->iov[i].iov_base, x_entry->iov[i].iov_len,
+						access, 0, 0, 0, &x_entry->mr[i], NULL);
+				if (!err)
+					FI_WARN(&rxr_prov, FI_LOG_MR, "The 2nd attemp was successful!");
+			}
+		}
+
 		if (err) {
 			FI_WARN(&rxr_prov, FI_LOG_EP_CTRL,
 				"fi_mr_reg failed! buf: %p len: %ld access: %lx",
-				tx_entry->base.iov[i].iov_base, tx_entry->base.iov[i].iov_len,
+				x_entry->iov[i].iov_base, x_entry->iov[i].iov_len,
 				access);
 
-			tx_entry->base.mr[i] = NULL;
+			x_entry->mr[i] = NULL;
 			ret = err;
 		} else {
-			tx_entry->base.desc[i] = fi_mr_desc(tx_entry->base.mr[i]);
+			x_entry->desc[i] = fi_mr_desc(x_entry->mr[i]);
 		}
 	}
 
@@ -488,7 +506,7 @@ int rxr_ep_tx_init_mr_desc(struct rxr_ep *rxr_ep,
 void rxr_prepare_desc_send(struct rxr_ep *rxr_ep,
 			   struct rxr_tx_entry *tx_entry)
 {
-	ofi_locate_iov(tx_entry->base.iov, tx_entry->base.iov_count, tx_entry->bytes_sent,
+	ofi_locate_iov(tx_entry->base.iov, tx_entry->base.iov_count, tx_entry->base.bytes_submitted,
 		       &tx_entry->iov_index, &tx_entry->iov_offset);
 
 	tx_entry->iov_mr_start = tx_entry->iov_index;
@@ -496,7 +514,7 @@ void rxr_prepare_desc_send(struct rxr_ep *rxr_ep,
 	 * because the long message protocol would work with or without
 	 * memory registration and descriptor.
 	 */
-	rxr_ep_tx_init_mr_desc(rxr_ep, tx_entry, tx_entry->iov_index, FI_SEND);
+	rxr_ep_init_mr_desc(rxr_ep, &tx_entry->base, tx_entry->iov_index, FI_SEND);
 }
 
 /* Generic send */
@@ -637,9 +655,6 @@ static void rxr_ep_free_res(struct rxr_ep *rxr_ep)
 
 	if (rxr_ep->tx_entry_pool)
 		ofi_bufpool_destroy(rxr_ep->tx_entry_pool);
-
-	if (rxr_ep->read_entry_pool)
-		ofi_bufpool_destroy(rxr_ep->read_entry_pool);
 
 	if (rxr_ep->readrsp_tx_entry_pool)
 		ofi_bufpool_destroy(rxr_ep->readrsp_tx_entry_pool);
@@ -1129,21 +1144,14 @@ int rxr_ep_init(struct rxr_ep *ep)
 	if (ret)
 		goto err_free_rx_ooo_pool;
 
-	ret = ofi_bufpool_create(&ep->read_entry_pool,
-				 sizeof(struct rxr_read_entry),
-				 RXR_BUF_POOL_ALIGNMENT,
-				 ep->tx_size + RXR_MAX_RX_QUEUE_SIZE, 
-				 ep->tx_size + ep->rx_size, 0);
-	if (ret)
-		goto err_free_tx_entry_pool;
-
 	ret = ofi_bufpool_create(&ep->readrsp_tx_entry_pool,
 				 sizeof(struct rxr_tx_entry),
 				 RXR_BUF_POOL_ALIGNMENT,
 				 RXR_MAX_RX_QUEUE_SIZE,
 				 ep->rx_size, 0);
 	if (ret)
-		goto err_free_read_entry_pool;
+		goto err_free_tx_entry_pool;
+
 
 	ret = ofi_bufpool_create(&ep->rx_entry_pool,
 				 sizeof(struct rxr_rx_entry),
@@ -1218,9 +1226,6 @@ err_free_rx_entry_pool:
 err_free_readrsp_tx_entry_pool:
 	if (ep->readrsp_tx_entry_pool)
 		ofi_bufpool_destroy(ep->readrsp_tx_entry_pool);
-err_free_read_entry_pool:
-	if (ep->read_entry_pool)
-		ofi_bufpool_destroy(ep->read_entry_pool);
 err_free_tx_entry_pool:
 	if (ep->tx_entry_pool)
 		ofi_bufpool_destroy(ep->tx_entry_pool);
@@ -1417,7 +1422,7 @@ void rxr_ep_progress_internal(struct rxr_ep *ep)
 {
 	struct rxr_rx_entry *rx_entry;
 	struct rxr_tx_entry *tx_entry;
-	struct rxr_read_entry *read_entry;
+	struct rxr_x_entry *read_x_entry;
 	struct dlist_entry *tmp;
 	ssize_t ret;
 
@@ -1520,8 +1525,8 @@ void rxr_ep_progress_internal(struct rxr_ep *ep)
 	/*
 	 * Send read requests until finish or error encoutered
 	 */
-	dlist_foreach_container_safe(&ep->read_pending_list, struct rxr_read_entry,
-				     read_entry, pending_entry, tmp) {
+	dlist_foreach_container_safe(&ep->read_pending_list, struct rxr_x_entry,
+				     read_x_entry, queued_entry, tmp) {
 		/*
 		 * The core's TX queue is full so we can't do any
 		 * additional work.
@@ -1529,14 +1534,14 @@ void rxr_ep_progress_internal(struct rxr_ep *ep)
 		if (ep->tx_pending == ep->max_outstanding_tx)
 			goto out;
 
-		ret = rxr_read_post(ep, read_entry);
+		ret = rxr_read_post(ep, read_x_entry);
 		if (ret == -FI_EAGAIN)
 			break;
 
 		if (OFI_UNLIKELY(ret))
 			goto read_err;
 
-		dlist_remove(&read_entry->pending_entry);
+		dlist_remove(&read_x_entry->queued_entry);
 	}
 
 out:
@@ -1553,9 +1558,9 @@ tx_err:
 	return;
 
 read_err:
-	if (rxr_read_handle_error(ep, read_entry, ret))
+	if (rxr_read_handle_error(ep, read_x_entry, ret))
 		assert(0 &&
-		       "error writing err cq entry while handling RDMA error");
+		       "error writing err cq entry while handling READ error");
 	return;
 }
 
