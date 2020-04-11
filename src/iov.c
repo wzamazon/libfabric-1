@@ -117,19 +117,56 @@ out:
 	rma_iov[0].len -= to_consume;
 }
 
-int ofi_truncate_iov(struct iovec *iov, size_t *iov_count, size_t new_size)
+int ofi_locate_iov(struct iovec *iov, size_t iov_count, size_t offset,
+		   size_t *iov_index, size_t *iov_offset)
 {
 	size_t i;
 
-	for (i = 0; i < *iov_count; i++) {
-		if (new_size <= iov[i].iov_len) {
-			iov[i].iov_len = new_size;
-			*iov_count = i + 1;
-			return FI_SUCCESS;
+	for (i = 0; i < iov_count; i++) {
+		if (offset <= iov[i].iov_len) {
+			*iov_index = i;
+			*iov_offset = offset;
+			return 0;
 		}
-		new_size -= iov[i].iov_len;
+
+		offset -= iov[i].iov_len;
 	}
-	return -FI_ETRUNC;
+
+	return -1;
+}
+
+int ofi_locate_rma_iov(struct fi_rma_iov *rma_iov, size_t rma_iov_count, size_t offset,
+		       size_t *rma_iov_index, size_t *rma_iov_offset)
+{
+	size_t i;
+
+	for (i = 0; i < rma_iov_count; i++) {
+		if (offset <= rma_iov[i].len) {
+			*rma_iov_index = i;
+			*rma_iov_offset = offset;
+			return 0;
+		}
+
+		offset -= rma_iov[i].len;
+	}
+
+	return -1;
+}
+
+
+int ofi_truncate_iov(struct iovec *iov, size_t *iov_count, size_t new_size)
+{
+	int err;
+	size_t iov_index = 0;
+	size_t iov_offset = 0;
+
+	err = ofi_locate_iov(iov, *iov_count, new_size, &iov_index, &iov_offset);
+	if (err)
+		return -FI_ETRUNC;
+
+	*iov_count = iov_index + 1;
+	iov[iov_index].iov_len = iov_offset;
+	return FI_SUCCESS;
 }
 
 /* Copy 'len' bytes worth of src iovec to dst */

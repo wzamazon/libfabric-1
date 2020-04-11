@@ -187,6 +187,12 @@ void ofi_consume_iov_desc(struct iovec *iovec, void **desc,
 void ofi_consume_rma_iov(struct fi_rma_iov *rma_iov, size_t *rma_iov_count,
 			 size_t length);
 
+int ofi_locate_iov(struct iovec *iov, size_t iov_count, size_t offset,
+		   size_t *iov_index, size_t *iov_offset);
+
+int ofi_locate_rma_iov(struct fi_rma_iov *rma_iov, size_t rma_iov_count, size_t offset,
+		       size_t *rma_iov_index, size_t *rma_iov_offset);
+
 int ofi_truncate_iov(struct iovec *iov, size_t *iov_count, size_t new_size);
 
 /* Copy 'len' bytes worth of src iovec to dst */
