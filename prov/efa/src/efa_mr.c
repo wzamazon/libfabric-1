@@ -39,6 +39,45 @@ static int efa_mr_regattr(struct fid *fid, const struct fi_mr_attr *attr,
 static int efa_mr_reg_impl(struct efa_mr *efa_mr, uint64_t flags, void *attr);
 static int efa_mr_dereg_impl(struct efa_mr *efa_mr);
 
+/*
+ * Linux copy-on-write semantics mean that following a fork() call,
+ * parent and child processes will have page table entries pointing to
+ * the same physical page. Since these pages are write protected, if
+ * either the parent or child writes to the page, the hardware will
+ * trap the event. The kernel will then allocate a new page and copy
+ * the contents from the original page, breaking the virtual to physical
+ * page link for that process.
+ *
+ * To prevent this case, marking pinned memory with MADV_DONTFORK
+ * only allows the memory range to be seen by the parent process, and
+ * the copy-on-write semantics no longer apply to this memory range.
+ *
+ * Although the rdma-core library support this, the implementation was not
+ * very efficient: when hugepages safety is required, it read the
+ * /proc/pid/smaps file to determine page size.
+ * Therefore, eventhough we are using rdma-core, we did not enable rdma-core's
+ * support of fork() and hugepages, by calling ibv_fork_init() and
+ * setenv("RDMAV_HUGEPAGES_SAFE"). Instead, we use efa_madvise()
+ */
+
+/* madvise requires page aligned addresses and lengths */
+static
+int efa_madvise(void *addr, size_t length, int advice)
+{
+	int i;
+
+	for (i = 0; i < num_page_sizes; i++) {
+		if (!(madvise(ofi_get_page_start(addr, page_sizes[i]),
+			      ofi_get_page_bytes(addr, length, page_sizes[i]),
+			      advice))) {
+			return 0;
+		}
+	}
+
+	EFA_WARN_ERRNO(FI_LOG_MR, "Failed to set madvise", errno);
+	return -errno;
+}
+
 static int efa_mr_cache_close(fid_t fid)
 {
 	struct efa_mr *efa_mr = container_of(fid, struct efa_mr,
@@ -232,6 +271,14 @@ static int efa_mr_dereg_impl(struct efa_mr *efa_mr)
 			"Unable to deregister memory registration\n");
 		ret = err;
 	}
+
+	err = efa_madvise(efa_mr->ibv_mr->addr, efa_mr->ibv_mr->length, MADV_DOFORK);
+	if (err) {
+		EFA_WARN(FI_LOG_MR,
+			 "Unable to madvise memory as MADV_DOFORK\n");
+		ret = err;
+	}
+
 	err = ofi_mr_map_remove(&efa_domain->util_domain.mr_map,
 				efa_mr->mr_fid.key);
 	if (err) {
@@ -299,12 +346,22 @@ static int efa_mr_reg_impl(struct efa_mr *efa_mr, uint64_t flags, void *attr)
 	if (efa_mr->domain->ctx->device_caps & EFADV_DEVICE_ATTR_CAPS_RDMA_READ)
 		fi_ibv_access |= IBV_ACCESS_REMOTE_READ;
 
-	efa_mr->ibv_mr = ibv_reg_mr(efa_mr->domain->ibv_pd, 
+	ret = efa_madvise((void *)mr_attr->mr_iov->iov_base,
+			  mr_attr->mr_iov->iov_len, MADV_DONTFORK);
+	if (ret) {
+		EFA_WARN(FI_LOG_MR, "Unable to madvise the MR as MAV_DONTFORK\n");
+		return ret;
+	}
+
+	efa_mr->ibv_mr = ibv_reg_mr(efa_mr->domain->ibv_pd,
 				    (void *)mr_attr->mr_iov->iov_base,
 				    mr_attr->mr_iov->iov_len, fi_ibv_access);
 	if (!efa_mr->ibv_mr) {
 		EFA_WARN(FI_LOG_MR, "Unable to register MR: %s\n",
 				fi_strerror(-errno));
+
+		efa_madvise((void *)mr_attr->mr_iov->iov_base,
+			    mr_attr->mr_iov->iov_len, MADV_DOFORK);
 		return -errno;
 	}
 
