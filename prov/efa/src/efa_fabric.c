@@ -84,6 +84,8 @@ int efa_mr_cache_enable		= EFA_DEF_MR_CACHE_ENABLE;
 size_t efa_mr_max_cached_count;
 size_t efa_mr_max_cached_size;
 
+int efa_set_rdmav_hugepages_safe = 0;
+
 static void efa_addr_to_str(const uint8_t *raw_addr, char *str);
 static int efa_get_addr(struct efa_context *ctx, void *src_addr);
 
@@ -861,7 +863,15 @@ static int efa_fabric_close(fid_t fid)
 	struct efa_fabric *fab;
 	int ret;
 
-	unsetenv("RDMAV_HUGEPAGES_SAFE");
+	/*
+	 * We only use rdma-core's support of fork+hugepages when MR cache
+	 * is turned off. see the comments in efa_fabric() for more details.
+	 */
+	if (efa_set_rdmav_hugepages_safe) {
+		assert(!efa_mr_cache_enable);
+		unsetenv("RDMAV_HUGEPAGES_SAFE");
+	}
+
 	fab = container_of(fid, struct efa_fabric, util_fabric.fabric_fid.fid);
 	ret = ofi_fabric_close(&fab->util_fabric);
 	if (ret)
@@ -896,26 +906,62 @@ int efa_fabric(struct fi_fabric_attr *attr, struct fid_fabric **fabric_fid,
 	int ret = 0;
 
 	/*
-	 * Enable rdma-core fork support and huge page support. We want call
-	 * this only when the EFA provider is selected. It is safe to call this
-	 * function again if multiple EFA fabrics are opened or if the fabric
-	 * is closed and opened again.
+	 * To support fork safety, we need to call madvise() to advise the memory
+	 * as MADV_DONTFORK before calling ibv_reg_mr(), and advise the memory region back
+	 * as MADV_DOFORK after calling ibv_dereg_mr().
 	 *
-	 * TODO: allow users to disable this once the fork() to check ptrace
-	 * permissions is removed.
+	 * madvise() require page aligned addresses and lengths, therefore the page
+	 * size of the memory region are needed.
+	 *
+	 * To get the page size is non-trivial when huge page is used.
+	 *
+	 * rdma-core's solution is to retrieve the page information from /proc/<pid>/smaps,
+	 * which is extremely slow. It also use a rbtree to keep track of memory regions
+	 * so each region is only madvised twice (once as DONTFORK, once as DOFORK).
+	 *
+	 * We wrote a function efa_madvise() (efa_mr.c) for this, which will
+	 * try all the possible page size. However, it does not keep track of registered regions
+	 * thus is incorrect when same region are registered more than once.
+	 *
+	 * For example, consider the following pseudo code by an application
+	 *      buf = malloc(buf, len)
+	 *      fi_mr_reg(buf); // call efa_madvise(DONTFORK), and ibv_reg_mr(buf)
+	 *      fi_mr_reg(buf); // call efa_madvise(DONTFORK), and ibv_reg_mr(buf)
+	 *      fi_mr_dereg(buf); //call ibv_dereg_mr(), and efa_madvise(DOFORK)
+	 * After the fi_mr_dereg(), the memory region was set to DOFORK, but there are active
+	 * memory registration with it.
+	 *
+	 * Thus, when MR cache is turned on, we use efa_madvise() to support fork + hugepages.
+	 * Because with MR cache, same region will not be called ibv_reg_mr() more than once.
+	 *
+	 * When MR cache is turned off, we use rdma-core's support of fork + hugepages for
+	 * its correctness.
 	 */
-	ret = setenv("RDMAV_HUGEPAGES_SAFE", "1", 1);
-	if (ret)
-		return -errno;
+	if (!efa_mr_cache_enable) {
+		/*
+		 * Enable rdma-core fork support and huge page support. We want call
+		 * this only when the EFA provider is selected. It is safe to call this
+		 * function again if multiple EFA fabrics are opened or if the fabric
+		 * is closed and opened again.
+		 *
+		 * TODO: allow users to disable this once the fork() to check ptrace
+		 * permissions is removed.
+		 */
+		ret = setenv("RDMAV_HUGEPAGES_SAFE", "1", 1);
+		if (ret)
+			return -errno;
 
-	ret = ibv_fork_init();
-	if (ret) {
-		EFA_WARN(FI_LOG_FABRIC, "Failed to initialize libibverbs "
-					"fork support. Please check your "
-					"application to ensure it is not "
-					"making verbs calls before "
-					"initializing EFA.\n");
-		return -ret;
+		efa_set_rdmav_hugepages_safe = 1;
+
+		ret = ibv_fork_init();
+		if (ret) {
+			EFA_WARN(FI_LOG_FABRIC, "Failed to initialize libibverbs "
+				"fork support. Please check your "
+				"application to ensure it is not "
+				"making verbs calls before "
+				"initializing EFA.\n");
+				return -ret;
+		}
 	}
 
 	fab = calloc(1, sizeof(*fab));
@@ -955,7 +1001,7 @@ static void fi_efa_fini(void)
 	efa_device_free();
 #if HAVE_EFA_DL
 	smr_cleanup();
-#endif 
+#endif
 }
 
 struct fi_provider efa_prov = {
