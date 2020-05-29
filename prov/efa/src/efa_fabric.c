@@ -872,7 +872,6 @@ static int efa_fabric_close(fid_t fid)
 	struct efa_fabric *fab;
 	int ret;
 
-	unsetenv("RDMAV_HUGEPAGES_SAFE");
 	fab = container_of(fid, struct efa_fabric, util_fabric.fabric_fid.fid);
 	ret = ofi_fabric_close(&fab->util_fabric);
 	if (ret)
@@ -899,6 +898,75 @@ static struct fi_ops_fabric efa_ops_fabric = {
 	.trywait = ofi_trywait
 };
 
+static
+void efa_warn_atfork_callback()
+{
+	static char warn_msg_no_fork_safe[] =
+		"A process has executed an operation involving a call\n"
+		"to the fork() system call to create a child process.\n"
+		"\n"
+		"The libfabric EFA provider is currently operating in\n"
+		"a condition that could result in memory corruption or\n"
+		"other system errors; your job may hang, crash, or produce\n"
+		"silent data corruption.\n"
+		"\n"
+		"For libfabric EFA provider to work safely when\n"
+		"fork() is called, you will need to set the\n"
+		"the following two environment variables:\n"
+		"\n"
+		"          RDMAV_FORK_SAFE\n"
+		"          RDMAV_HUGEPAGES_SAFE\n"
+		"\n"
+		"However, setting these environment variables can result in\n"
+		"signficant performance impact to your application due to\n"
+		"increased cost of memory registration.\n";
+
+	static char warn_msg_no_hugepages_safe[] =
+		"A process has executed an operation involving a call\n"
+		"to the fork() system call to create a child process.\n"
+		"\n"
+		"Although the environment variable\n"
+		"                      %s\n"
+		"has been set, because the libfabric EFA provider uses \n"
+		"huge pages, and the environment variable RDMAV_HUGEPAGES_SAFE\n"
+		"was not set, the EFA provider is still in a condition that could\n"
+		"result in memory corruption or other system errors;\n"
+		"your job may hang, crash, or produce silent data corruption.\n"
+		"\n"
+		"For libfabric EFA provider to work properly when fork()\n"
+		"is calld, you will need to set the environment variable:\n"
+		"          RDMAV_HUGEPAGES_SAFE\n"
+		"in addition to your current environmetal settings.\n"
+		"\n"
+		"However, setting this environment variable can result in\n"
+		"signficant performance impact to your application due to\n"
+		"increase cost of memory registration.\n";
+
+	const char *env = NULL;
+	static int visited = 0;
+
+	if (visited)
+		return;
+
+	visited = 1;
+
+	if (getenv("RDMAV_FORK_SAFE")) {
+		env = "RDMAV_FORK_SAFE";
+	} else if(getenv("IBV_FORK_SAFE")) {
+		env = "IBV_FORK_SAFE";
+	} else {
+		fprintf(stderr, warn_msg_no_fork_safe);
+		return;
+	}
+
+	assert(env);
+	if (getenv("RDMAV_HUGEPAGES_SAFE")) {
+		return;
+	}
+
+	fprintf(stderr, warn_msg_no_hugepages_safe, env);
+}
+
 int efa_fabric(struct fi_fabric_attr *attr, struct fid_fabric **fabric_fid,
 	       void *context)
 {
@@ -906,27 +974,11 @@ int efa_fabric(struct fi_fabric_attr *attr, struct fid_fabric **fabric_fid,
 	struct efa_fabric *fab;
 	int ret = 0;
 
-	/*
-	 * Enable rdma-core fork support and huge page support. We want call
-	 * this only when the EFA provider is selected. It is safe to call this
-	 * function again if multiple EFA fabrics are opened or if the fabric
-	 * is closed and opened again.
-	 *
-	 * TODO: allow users to disable this once the fork() to check ptrace
-	 * permissions is removed.
-	 */
-	ret = setenv("RDMAV_HUGEPAGES_SAFE", "1", 1);
-	if (ret)
-		return -errno;
-
-	ret = ibv_fork_init();
+	ret = pthread_atfork(efa_warn_atfork_callback, NULL, NULL);
 	if (ret) {
-		EFA_WARN(FI_LOG_FABRIC, "Failed to initialize libibverbs "
-					"fork support. Please check your "
-					"application to ensure it is not "
-					"making verbs calls before "
-					"initializing EFA.\n");
-		return -ret;
+		EFA_WARN(FI_LOG_FABRIC,
+			 "Unable to register atfork callback");
+		return ret;
 	}
 
 	fab = calloc(1, sizeof(*fab));
@@ -966,7 +1018,7 @@ static void fi_efa_fini(void)
 	efa_device_free();
 #if HAVE_EFA_DL
 	smr_cleanup();
-#endif 
+#endif
 }
 
 struct fi_provider efa_prov = {
