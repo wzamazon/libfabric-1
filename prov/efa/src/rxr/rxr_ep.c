@@ -745,6 +745,7 @@ static int rxr_ep_bind(struct fid *ep_fid, struct fid *bfid, uint64_t flags)
 		if (ret)
 			return ret;
 
+		fprintf(stderr, "master + limit read msg 512k + early rx comp\n");
 		ret = fi_ep_bind(rxr_ep->rdm_ep, &av->util_av.av_fid.fid, flags);
 		if (ret)
 			return ret;
