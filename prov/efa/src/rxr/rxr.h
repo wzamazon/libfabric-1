@@ -530,6 +530,8 @@ struct rxr_ep {
 	size_t rx_iov_limit;
 	size_t tx_iov_limit;
 
+	cudaStream_t stream;
+	uint64_t caps;
 	/* core's capabilities */
 	uint64_t core_caps;
 
@@ -646,6 +648,10 @@ struct rxr_ep {
 
 #define rxr_rx_flags(rxr_ep) ((rxr_ep)->util_ep.rx_op_flags)
 #define rxr_tx_flags(rxr_ep) ((rxr_ep)->util_ep.tx_op_flags)
+
+uint64_t rxr_copy_to_rx(struct rxr_ep *ep,
+			void *buf, uint64_t bufsize, uint64_t iov_offset,
+			struct rxr_rx_entry *rx_entry);
 
 /*
  * Control header with completion data. CQ data length is static.

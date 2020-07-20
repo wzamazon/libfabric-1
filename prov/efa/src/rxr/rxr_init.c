@@ -68,7 +68,7 @@ struct rxr_env rxr_env = {
 	.efa_cq_read_size = 50,
 	.shm_cq_read_size = 50,
 	.efa_max_medium_msg_size = 65536,
-	.efa_min_read_msg_size = 1048576,
+	.efa_min_read_msg_size = 750000,
 	.efa_min_read_write_size = 65536,
 	.efa_read_segment_size = 1073741824,
 };
@@ -394,6 +394,15 @@ static int rxr_info_to_rxr(uint32_t version, const struct fi_info *core_info,
 
 			info->domain_attr->mr_mode |= FI_MR_HMEM;
 
+		} else {
+			/* with FI_HMEM support, we will register packet pool memory
+			 * with CUDA, that will use around 1GB of GPU memory, thus
+			 * turn off the capability bit if application did not request
+			 * FI_HMEM support to save memory. This is necessary when using
+			 * Open MPI + NCCL. In which case, multiple end point will be
+			 * opened. The one opened by Open MPI does not need HMEM support
+			 */
+			info->caps &= ~FI_HMEM;
 		}
 #endif
 		/*

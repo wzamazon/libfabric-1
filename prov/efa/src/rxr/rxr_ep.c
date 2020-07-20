@@ -1060,7 +1060,13 @@ static int rxr_buf_region_alloc_hndlr(struct ofi_bufpool_region *region)
 			region->pool->alloc_size,
 			FI_SEND | FI_RECV, 0, 0, 0, &mr, NULL);
 
+	if (ret) {
+		FI_WARN(&rxr_prov, FI_LOG_EP_CTRL,
+			"Unable to register buffer with EFA\n");
+	}
+
 	region->context = mr;
+
 	return ret;
 }
 
@@ -1077,7 +1083,7 @@ static void rxr_buf_region_free_hndlr(struct ofi_bufpool_region *region)
 
 static int rxr_create_pkt_pool(struct rxr_ep *ep, size_t size,
 			       size_t chunk_count,
-			       struct ofi_bufpool **buf_pool)
+			       uint64_t flags, struct ofi_bufpool **buf_pool)
 {
 	struct ofi_bufpool_attr attr = {
 		.size		= size,
@@ -1090,49 +1096,114 @@ static int rxr_create_pkt_pool(struct rxr_ep *ep, size_t size,
 					rxr_buf_region_free_hndlr : NULL,
 		.init_fn	= NULL,
 		.context	= rxr_ep_domain(ep),
-		.flags		= OFI_BUFPOOL_HUGEPAGES,
+		.flags		= OFI_BUFPOOL_HUGEPAGES | flags,
 	};
 
 	return ofi_bufpool_create_attr(&attr, buf_pool);
+}
+
+uint64_t rxr_copy_to_rx(struct rxr_ep *ep,
+			void *buf, uint64_t bufsize, uint64_t iov_offset,
+			struct rxr_rx_entry *rx_entry)
+{
+	uint64_t done = 0, len;
+	char *iov_buf;
+	size_t i;
+	struct iovec *iov;
+	size_t iov_count;
+
+	iov = rx_entry->iov;
+	iov_count = rx_entry->iov_count;
+
+	for (i = 0; i < iov_count && bufsize; i++) {
+		len = iov[i].iov_len;
+
+		if (iov_offset > len) {
+			iov_offset -= len;
+			continue;
+		}
+
+		iov_buf = (char *)iov[i].iov_base + iov_offset;
+		len -= iov_offset;
+
+		len = MIN(len, bufsize);
+		if (efa_ep_is_cuda_mr(rx_entry->desc[i])) {
+			ofi_cudaKernelMemcpy(iov_buf, (char *) buf + done, len, ep->stream);
+		} else {
+			memcpy(iov_buf, (char *) buf + done, len);
+		}
+
+		iov_offset = 0;
+		bufsize -= len;
+		done += len;
+	}
+	return done;
 }
 
 int rxr_ep_init(struct rxr_ep *ep)
 {
 	size_t entry_sz;
 	int ret;
+	uint64_t pkt_pool_flags;
 
 	entry_sz = ep->mtu_size + sizeof(struct rxr_pkt_entry);
 #ifdef ENABLE_EFA_POISONING
 	ep->tx_pkt_pool_entry_sz = entry_sz;
 	ep->rx_pkt_pool_entry_sz = entry_sz;
 #endif
+	pkt_pool_flags = 0;
+	if (ep->caps & FI_HMEM) {
+		pkt_pool_flags = OFI_BUFPOOL_CUDA_REGISTER;
+		ret = cudaStreamCreate(&ep->stream);
+		if (ret) {
+			fprintf(stderr, "cudaStreamCreate failed! ret=%d\n", ret);
+			return ret;
+		}
+	}
 
+	fprintf(stderr, "before create tx_pkt_efa_pool, pkt_pool_flags: %lx\n",
+		pkt_pool_flags);
 	ret = rxr_create_pkt_pool(ep, entry_sz, rxr_get_tx_pool_chunk_cnt(ep),
-				  &ep->tx_pkt_efa_pool);
+				  pkt_pool_flags, &ep->tx_pkt_efa_pool);
 	if (ret)
 		goto err_out;
+	ret = ofi_bufpool_grow(ep->tx_pkt_efa_pool);
+	if (ret)
+		goto err_out;
+	fprintf(stderr, " after create tx_pkt_efa_pool\n");
 
+	fprintf(stderr, "before create rx_pkt_efa_pool\n");
 	ret = rxr_create_pkt_pool(ep, entry_sz, rxr_get_rx_pool_chunk_cnt(ep),
-				  &ep->rx_pkt_efa_pool);
+				  pkt_pool_flags, &ep->rx_pkt_efa_pool);
 	if (ret)
 		goto err_free_tx_pool;
+	ret = ofi_bufpool_grow(ep->rx_pkt_efa_pool);
+	if (ret)
+		goto err_free_tx_pool;
+	fprintf(stderr, " after create rx_pkt_efa_pool\n");
 
 	if (rxr_env.rx_copy_unexp) {
-		ret = ofi_bufpool_create(&ep->rx_unexp_pkt_pool, entry_sz,
-					 RXR_BUF_POOL_ALIGNMENT, 0,
-					 rxr_get_rx_pool_chunk_cnt(ep), 0);
-
+		fprintf(stderr, "before create rx_unexp_pkt_pool\n");
+		ret = rxr_create_pkt_pool(ep, entry_sz, rxr_get_rx_pool_chunk_cnt(ep),
+					  pkt_pool_flags, &ep->rx_unexp_pkt_pool);
+		if (ret)
+			goto err_free_rx_pool;
+		ret = ofi_bufpool_grow(ep->rx_unexp_pkt_pool);
+		fprintf(stderr, " after create rx_unexp_pkt_pool\n");
 		if (ret)
 			goto err_free_rx_pool;
 	}
 
 	if (rxr_env.rx_copy_ooo) {
-		ret = ofi_bufpool_create(&ep->rx_ooo_pkt_pool, entry_sz,
-					 RXR_BUF_POOL_ALIGNMENT, 0,
-					 rxr_env.recvwin_size, 0);
-
+		fprintf(stderr, "before create rx_unexp_pkt_pool\n");
+		ret = rxr_create_pkt_pool(ep, entry_sz, rxr_env.recvwin_size,
+					  pkt_pool_flags, &ep->rx_ooo_pkt_pool);
 		if (ret)
 			goto err_free_rx_unexp_pool;
+		ret = ofi_bufpool_grow(ep->rx_ooo_pkt_pool);
+		if (ret)
+			goto err_free_rx_unexp_pool;
+		fprintf(stderr, " after create rx_unexp_pkt_pool\n");
 	}
 
 	ret = ofi_bufpool_create(&ep->tx_entry_pool,
@@ -1654,6 +1725,7 @@ int rxr_endpoint(struct fid_domain *domain, struct fi_info *info,
 			goto err_close_core_ep;
 	}
 
+	rxr_ep->caps = info->caps;
 	rxr_ep->rx_size = info->rx_attr->size;
 	rxr_ep->tx_size = info->tx_attr->size;
 	rxr_ep->rx_iov_limit = info->rx_attr->iov_limit;

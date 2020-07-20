@@ -30,7 +30,6 @@
  * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  * SOFTWARE.
  */
-
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -38,7 +37,8 @@
 #include <ofi_mem.h>
 #include <ofi.h>
 #include <ofi_osd.h>
-
+#include <cuda.h>
+#include <cuda_runtime.h>
 
 enum {
 	OFI_BUFPOOL_REGION_CHUNK_CNT = 16
@@ -92,6 +92,17 @@ retry:
 		ret = pool->attr.alloc_fn(buf_region);
 		if (ret)
 			goto err2;
+	}
+
+	if (pool->attr.flags & OFI_BUFPOOL_CUDA_REGISTER) {
+		ret = cudaHostRegister(buf_region->alloc_region, buf_region->pool->alloc_size,
+				       cudaHostRegisterMapped);
+		if (ret) {
+			FI_DBG(&core_prov, FI_LOG_CORE,
+			       "cudaHostRegister failed! %s\n",
+			       fi_strerror(-ret));
+			assert(0);
+		}
 	}
 
 	if (!(pool->region_cnt % OFI_BUFPOOL_REGION_CHUNK_CNT)) {
@@ -218,6 +229,16 @@ void ofi_bufpool_destroy(struct ofi_bufpool *pool)
 			(buf_region->use_cnt == 0));
 		if (pool->attr.free_fn)
 			pool->attr.free_fn(buf_region);
+
+		if (pool->attr.flags & OFI_BUFPOOL_CUDA_REGISTER) {
+			ret = cudaHostUnregister(buf_region->alloc_region);
+			if (ret) {
+				FI_DBG(&core_prov, FI_LOG_CORE,
+				       "cudaHostUnregister failed! %s\n",
+				       fi_strerror(-ret));
+				assert(0);
+			}
+		}
 
 		if (buf_region->flags & OFI_BUFPOOL_HUGEPAGES) {
 			ret = ofi_free_hugepage_buf(buf_region->alloc_region,

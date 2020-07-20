@@ -34,6 +34,7 @@
 #include <config.h>
 #endif
 
+#include <stdio.h>
 #include "ofi_hmem.h"
 #include "ofi.h"
 
@@ -96,17 +97,18 @@ CUresult ofi_cuPointerGetAttribute(void *data, CUpointer_attribute attribute,
 int cuda_copy_to_dev(void *dev, const void *host, size_t size)
 {
 	cudaError_t cuda_ret;
-
 	cuda_ret = ofi_cudaMemcpy(dev, host, size, cudaMemcpyHostToDevice);
-	if (cuda_ret == cudaSuccess)
-		return 0;
 
-	FI_WARN(&core_prov, FI_LOG_CORE,
-		"Failed to perform cudaMemcpy: %s:%s\n",
-		ofi_cudaGetErrorName(cuda_ret),
-		ofi_cudaGetErrorString(cuda_ret));
+	if (cuda_ret != cudaSuccess) {
+		FI_WARN(&core_prov, FI_LOG_CORE,
+			"Failed to perform cudaMemcpy: %s:%s\n",
+			ofi_cudaGetErrorName(cuda_ret),
+			ofi_cudaGetErrorString(cuda_ret));
 
-	return -FI_EIO;
+		return -FI_EIO;
+	}
+
+	return 0;
 }
 
 int cuda_copy_from_dev(void *host, const void *dev, size_t size)

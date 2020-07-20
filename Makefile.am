@@ -43,6 +43,7 @@ common_srcs =				\
 	src/hmem.c			\
 	src/hmem_rocr.c			\
 	src/hmem_cuda.c			\
+	src/hmem_cuda_kernel_memcpy.cu  \
 	src/common.c			\
 	src/enosys.c			\
 	src/rbtree.c			\
@@ -75,7 +76,9 @@ common_srcs =				\
 	prov/util/src/cuda_mem_monitor.c \
 	prov/util/src/util_coll.c
 
-
+.cu.lo:
+	$(top_srcdir)/cuda_libtool.py $@ nvcc -gencode=arch=compute_30,code=sm_30 -c $<
+	
 if MACOS
 common_srcs += src/unix/osd.c
 common_srcs += include/osx/osd.h
@@ -177,7 +180,7 @@ src_libfabric_la_SOURCES =			\
 
 src_libfabric_la_CPPFLAGS = $(AM_CPPFLAGS)
 src_libfabric_la_LDFLAGS =
-src_libfabric_la_LIBADD =
+src_libfabric_la_LIBADD = -lstdc++
 src_libfabric_la_DEPENDENCIES = libfabric.map
 
 if !EMBEDDED

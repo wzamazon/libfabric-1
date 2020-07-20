@@ -48,6 +48,9 @@
 /* Libfabric supported CUDA operations. */
 cudaError_t ofi_cudaMemcpy(void* dst, const void* src, size_t count,
 			   enum cudaMemcpyKind kind);
+/* launch a kernel to copy data from device to device */
+void ofi_cudaKernelMemcpy(void* dst, const void* src, size_t count, cudaStream_t stream);
+
 const char *ofi_cudaGetErrorName(cudaError_t error);
 const char *ofi_cudaGetErrorString(cudaError_t error);
 CUresult ofi_cuPointerGetAttribute(void *data, CUpointer_attribute attribute,
