@@ -86,7 +86,7 @@ ssize_t rxr_msg_post_rtm(struct rxr_ep *rxr_ep, struct rxr_tx_entry *tx_entry)
 
 	max_rtm_data_size = rxr_pkt_req_max_data_size(rxr_ep,
 						      tx_entry->addr,
-						      RXR_EAGER_MSGRTM_PKT + tagged);
+						      RXR_DC_EAGER_MSGRTM_PKT + tagged);
 
 	delivery_complete_requested = rxr_ep->util_ep.tx_op_flags & FI_DELIVERY_COMPLETE;
 	tx_entry->delivery_complete_requested = delivery_complete_requested;

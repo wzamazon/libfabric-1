@@ -424,7 +424,7 @@ ssize_t rxr_rma_post_write(struct rxr_ep *ep, struct rxr_tx_entry *tx_entry)
 	}
 
 	/* Inter instance */
-	if (tx_entry->total_len < rxr_pkt_req_max_data_size(ep, tx_entry->addr, RXR_EAGER_RTW_PKT)) {
+	if (tx_entry->total_len < rxr_pkt_req_max_data_size(ep, tx_entry->addr, RXR_DC_EAGER_RTW_PKT)) {
 		ctrl_type = delivery_complete_requested ?
 			RXR_DC_EAGER_RTW_PKT : RXR_EAGER_RTW_PKT;
 		return rxr_pkt_post_ctrl_or_queue(ep, RXR_TX_ENTRY, tx_entry, ctrl_type, 0);
