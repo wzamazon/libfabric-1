@@ -245,8 +245,8 @@ void rxr_pkt_handle_ctrl_sent(struct rxr_ep *rxr_ep, struct rxr_pkt_entry *pkt_e
 		rxr_pkt_handle_medium_rtm_sent(rxr_ep, pkt_entry);
 		break;
 	case RXR_LONG_MSGRTM_PKT:
-	case RXR_DC_LONG_MSGRTM_PKT:
 	case RXR_LONG_TAGRTM_PKT:
+	case RXR_DC_LONG_MSGRTM_PKT:
 	case RXR_DC_LONG_TAGRTM_PKT:
 		rxr_pkt_handle_long_rtm_sent(rxr_ep, pkt_entry);
 		break;
@@ -563,27 +563,20 @@ void rxr_pkt_handle_send_completion(struct rxr_ep *ep, struct fi_cq_data_entry *
 		/* no action to be taken here */
 		break;
 	case RXR_DC_EAGER_MSGRTM_PKT:
-		/* completion will be written upon receving the receipt packet, thus no action to be taken here */
-		break;
 	case RXR_DC_EAGER_TAGRTM_PKT:
-		/* completion will be written upon receving the receipt packet, thus no action to be taken her */
-		break;
 	case RXR_DC_MEDIUM_MSGRTM_PKT:
 	case RXR_DC_MEDIUM_TAGRTM_PKT:
-		rxr_pkt_handle_dc_medium_rtm_send_completion(ep, pkt_entry);
-		break;
 	case RXR_DC_LONG_MSGRTM_PKT:
 	case RXR_DC_LONG_TAGRTM_PKT:
-		rxr_pkt_handle_dc_long_rtm_send_completion(ep, pkt_entry);
-		break;
 	case RXR_DC_EAGER_RTW_PKT:
-		/* no action to be taken here */
-		break;
 	case RXR_DC_LONG_RTW_PKT:
-		rxr_pkt_handle_dc_long_rtw_send_completion(ep, pkt_entry);
-		break;
 	case RXR_DC_WRITE_RTA_PKT:
-		/* no action to be taken here */
+		/* For non-dc version of the packet type, this is the plact to increase
+		 * tx_entry->bytes_acked, which is used to determine if tx completion should be written.
+		 * For DC, tx completion was written when receipt packet was used. Thus
+		 * tx_entry->bytes_acked is not used. Moreover, because receipt packet can arrive
+		 * before paccket send completion, it can be harmful to increase tx_entry->bytes_acked.
+		 * Therefore, no action can be taken here for DC packets */
 		break;
 	default:
 		FI_WARN(&rxr_prov, FI_LOG_CQ,

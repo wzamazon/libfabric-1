@@ -231,12 +231,20 @@ void rxr_pkt_handle_data_send_completion(struct rxr_ep *ep,
 	struct rxr_tx_entry *tx_entry;
 
 	tx_entry = (struct rxr_tx_entry *)pkt_entry->x_entry;
-	tx_entry->bytes_acked +=
-		rxr_get_data_pkt(pkt_entry->pkt)->hdr.seg_size;
+	if (tx_entry->delivery_complete_requested) {
+		/* If FI_DELIVERY_COMPLETE requested, we do not use
+		 * tx_entry->bytes_acked to determine whether
+		 * rx_cq_handle_tx_completion() should be called.
+		 * It will be called upon receiving RECEIPT
+		 */
+		assert(tx_entry->bytes_acked == 0);
+	} else {
+		tx_entry->bytes_acked +=
+			rxr_get_data_pkt(pkt_entry->pkt)->hdr.seg_size;
 
-	/* If FI_DELIVERY_COMPLETE requested, rx_cq_handle_tx_completion() will be called upon receiving RECEIPT */
-	if (tx_entry->total_len == tx_entry->bytes_acked && !tx_entry->delivery_complete_requested)
-		rxr_cq_handle_tx_completion(ep, tx_entry);
+		if (tx_entry->total_len == tx_entry->bytes_acked )
+			rxr_cq_handle_tx_completion(ep, tx_entry);
+	}
 }
 
 /*

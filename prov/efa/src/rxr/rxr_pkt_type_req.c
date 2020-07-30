@@ -685,26 +685,6 @@ void rxr_pkt_handle_long_rtm_send_completion(struct rxr_ep *ep,
 		rxr_cq_handle_tx_completion(ep, tx_entry);
 }
 
-void rxr_pkt_handle_dc_medium_rtm_send_completion(struct rxr_ep *ep,
-						  struct rxr_pkt_entry *pkt_entry)
-{
-	struct rxr_tx_entry *tx_entry;
-
-	tx_entry = (struct rxr_tx_entry *)pkt_entry->x_entry;
-	tx_entry->bytes_acked += rxr_pkt_req_data_size(pkt_entry);
-	/* No need to write completion here. */
-}
-
-void rxr_pkt_handle_dc_long_rtm_send_completion(struct rxr_ep *ep,
-						struct rxr_pkt_entry *pkt_entry)
-{
-	struct rxr_tx_entry *tx_entry;
-
-	tx_entry = (struct rxr_tx_entry *)pkt_entry->x_entry;
-	tx_entry->bytes_acked += rxr_pkt_req_data_size(pkt_entry);
-	/* No need to write completion here. */
-}
-
 /*
  *     proc() functions
  */
@@ -1448,16 +1428,6 @@ void rxr_pkt_handle_long_rtw_send_completion(struct rxr_ep *ep,
 	tx_entry->bytes_acked += rxr_pkt_req_data_size(pkt_entry);
 	if (tx_entry->total_len == tx_entry->bytes_acked)
 		rxr_cq_handle_tx_completion(ep, tx_entry);
-}
-
-void rxr_pkt_handle_dc_long_rtw_send_completion(struct rxr_ep *ep,
-						struct rxr_pkt_entry *pkt_entry)
-{
-	struct rxr_tx_entry *tx_entry;
-
-	tx_entry = (struct rxr_tx_entry *)pkt_entry->x_entry;
-	tx_entry->bytes_acked += rxr_pkt_req_data_size(pkt_entry);
-	/* no need to write completion here */
 }
 
 /*
