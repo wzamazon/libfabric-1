@@ -747,7 +747,7 @@ static int rxr_ep_bind(struct fid *ep_fid, struct fid *bfid, uint64_t flags)
 		if (ret)
 			return ret;
 
-		fprintf(stderr, "old branch\n");
+		fprintf(stderr, "dc branch + bugfix + mem poisoning\n");
 		ret = fi_ep_bind(rxr_ep->rdm_ep, &av->util_av.av_fid.fid, flags);
 		if (ret)
 			return ret;
