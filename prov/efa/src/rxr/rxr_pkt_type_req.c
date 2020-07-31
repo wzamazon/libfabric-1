@@ -945,12 +945,13 @@ ssize_t rxr_pkt_proc_matched_medium_rtm(struct rxr_ep *ep,
 	}
 
 	if (rx_entry->total_len == rx_entry->bytes_done) {
+		rx_entry->tx_id = rxr_get_dc_medium_rtm_base_hdr(pkt_entry->pkt)->tx_id;
+		rx_entry->addr = pkt_entry->addr;
+
 		rxr_pkt_rx_map_remove(ep, pkt_entry, rx_entry);
 		rxr_cq_handle_rx_completion(ep, pkt_entry, rx_entry);
 		rxr_msg_multi_recv_free_posted_entry(ep, rx_entry);
 		if (pkt_type == RXR_DC_MEDIUM_MSGRTM_PKT || pkt_type == RXR_DC_MEDIUM_TAGRTM_PKT) {
-			rx_entry->tx_id = rxr_get_dc_medium_rtm_base_hdr(pkt_entry->pkt)->tx_id;
-			rx_entry->addr = pkt_entry->addr;
 			ret = rxr_pkt_post_ctrl_or_queue(ep, RXR_RX_ENTRY, rx_entry, RXR_RECEIPT_PKT, 0);
 			if (OFI_UNLIKELY(ret)) {
 				FI_WARN(&rxr_prov, FI_LOG_CQ, "Posting of receipt packet failed! err=%ld\n", ret);
@@ -1010,12 +1011,13 @@ ssize_t rxr_pkt_proc_matched_rtm(struct rxr_ep *ep,
 		 * rxr_cq_handle_rx_completion() releases pkt_entry, thus
 		 * we do not release it here.
 		 */
+		rx_entry->delivery_complete_requested = base_hdr->flags & RXR_REQ_WAIT_RECEIPT;
+		rx_entry->tx_id = rxr_get_dc_rtm_base_hdr(pkt_entry->pkt)->tx_id;
+		rx_entry->msg_id = rxr_get_rtm_base_hdr(pkt_entry->pkt)->msg_id;
+		rx_entry->addr = pkt_entry->addr;
 		rxr_cq_handle_rx_completion(ep, pkt_entry, rx_entry);
 		rxr_msg_multi_recv_free_posted_entry(ep, rx_entry);
-		if (base_hdr->flags & RXR_REQ_WAIT_RECEIPT) {
-			rx_entry->tx_id = rxr_get_dc_rtm_base_hdr(pkt_entry->pkt)->tx_id;
-			rx_entry->msg_id = rxr_get_rtm_base_hdr(pkt_entry->pkt)->msg_id;
-			rx_entry->addr = pkt_entry->addr;
+		if (rx_entry->delivery_complete_requested) {
 			ret = rxr_pkt_post_ctrl_or_queue(ep, RXR_RX_ENTRY, rx_entry, RXR_RECEIPT_PKT, 0);
 			if (OFI_UNLIKELY(ret)) {
 				FI_WARN(&rxr_prov, FI_LOG_CQ, "Posting of receipt packet failed! err=%ld\n", ret);
