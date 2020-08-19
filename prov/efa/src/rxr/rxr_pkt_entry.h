@@ -41,6 +41,8 @@ enum rxr_pkt_entry_state {
 	RXR_PKT_ENTRY_FREE = 0,
 	RXR_PKT_ENTRY_IN_USE,
 	RXR_PKT_ENTRY_RNR_RETRANSMIT,
+	RXR_PKT_ENTRY_COPY_BY_READ, /* the pkt entry contains data. A RDMA read has been issued to copy 
+				       data to GPU receivingbuffer */
 };
 
 /* pkt_entry types for rx pkts */

@@ -242,41 +242,15 @@ void rxr_pkt_handle_data_send_completion(struct rxr_ep *ep,
 /*
  *  rxr_pkt_handle_data_recv() and related functions
  */
-int rxr_pkt_proc_data(struct rxr_ep *ep,
-		      struct rxr_rx_entry *rx_entry,
-		      struct rxr_pkt_entry *pkt_entry,
-		      char *data, size_t seg_offset,
-		      size_t seg_size)
+int rxr_pkt_handle_data_data_cpied(struct rxr_ep *ep, struct rxr_pke_entry *pkt_entry)
 {
-	struct rxr_peer *peer;
-	struct efa_mr *desc;
-	int64_t bytes_left, bytes_copied;
-	ssize_t ret = 0;
+	struct rxr_rx_entry *rx_entry;
+	struct rxr_data_pkt *data_pkt;
+	size_t seg_size;
 
-#if ENABLE_DEBUG
-	int pkt_type = rxr_get_base_hdr(pkt_entry->pkt)->type;
-
-	assert(pkt_type == RXR_DATA_PKT || pkt_type == RXR_READRSP_PKT);
-#endif
-	/* we are sinking message for CANCEL/DISCARD entry */
-	if (OFI_LIKELY(!(rx_entry->rxr_flags & RXR_RECV_CANCEL)) &&
-	    rx_entry->cq_entry.len > seg_offset) {
-		desc = rx_entry->desc[0];
-		bytes_copied = ofi_copy_to_hmem_iov(desc ? desc->peer.iface : FI_HMEM_SYSTEM,
-						    desc ? desc->peer.device.reserved : 0,
-						    rx_entry->iov,
-						    rx_entry->iov_count,
-						    seg_offset,
-						    data,
-						    seg_size);
-
-		if (bytes_copied != MIN(seg_size, rx_entry->cq_entry.len - seg_offset)) {
-			FI_WARN(&rxr_prov, FI_LOG_CQ, "wrong size! bytes_copied: %ld\n",
-				bytes_copied);
-			if (rxr_cq_handle_rx_error(ep, rx_entry, -FI_EINVAL))
-				assert(0 && "error writing error cq entry for EOR\n");
-		}
-	}
+	rx_entry = (struct rxr_rx_entry *)pkt_entry->x_entry;
+	data_pkt = (struct rxr_data_pkt *)pkt_entry->pkt;
+	seg_size = data_pkt->hdr.seg_size;
 
 	rx_entry->bytes_done += seg_size;
 
@@ -313,7 +287,51 @@ int rxr_pkt_proc_data(struct rxr_ep *ep,
 	}
 
 	rxr_pkt_entry_release_rx(ep, pkt_entry);
-	return ret;
+}
+
+void rxr_pkt_proc_data(struct rxr_ep *ep,
+		       struct rxr_rx_entry *rx_entry,
+		       struct rxr_pkt_entry *pkt_entry,
+		       char *data, size_t seg_offset,
+		       size_t seg_size)
+{
+	struct rxr_peer *peer;
+	struct efa_mr *desc;
+	int64_t bytes_left, bytes_copied;
+	ssize_t ret = 0;
+
+#if ENABLE_DEBUG
+	int pkt_type = rxr_get_base_hdr(pkt_entry->pkt)->type;
+
+	assert(pkt_type == RXR_DATA_PKT || pkt_type == RXR_READRSP_PKT);
+#endif
+	/*
+	 * we are sinking message for CANCEL/DISCARD entry,
+	 */
+	if (OFI_UNLIKELY(rx_entry->rxr_flags & RXR_RECV_CANCEL) ||
+	    seg_offset >= rx_entry->cq_entry.len) {
+		rxr_pkt_handle_data_data_copied(ep, pkt_entry);
+		return;
+	}
+
+	if (efa_ep_is_cuda_mr(desc)) {
+		err = rxr_pkt_post_read_to_copy_data(ep, pkt_entry, data, seg_size, rx_entry, seg_offset);
+	} else {
+		bytes_copied = ofi_copy_iov(rx_entry->iov,
+					    rx_entry->iov_count,
+					    seg_offset,
+					    data,
+					    seg_size);
+		if (bytes_copied != MIN(seg_size, rx_entry->cq_entry.len - seg_offset)) {
+			FI_WARN(&rxr_prov, FI_LOG_CQ, "wrong size! bytes_copied: %ld\n",
+				bytes_copied);
+			if (rxr_cq_handle_rx_error(ep, rx_entry, -FI_EINVAL))
+				assert(0 && "error writing error cq entry for EOR\n");
+			return;
+		}
+		
+		rxr_pkt_handle_data_data_copied(ep, pkt_entry);
+	}
 }
 
 void rxr_pkt_handle_data_recv(struct rxr_ep *ep,

@@ -102,6 +102,56 @@ ssize_t rxr_pkt_post_data(struct rxr_ep *rxr_ep,
 }
 
 /*
+ * This function post a rdma read to copy data to load data to receiving buffer.
+ * It is used when receive buffer is on GPU memory.
+ */
+int rxr_pkt_post_read_to_copy_data(struct rxr_ep *rxr_ep,
+				   struct pkt_entry *pkt_entry,
+				   char *data, size_t data_size,
+				   struct rxr_rx_entry *rx_entry,
+				   size_t data_offset)
+{
+	struct efa_ep *efa_ep;
+	ssize_t err;
+	int iov_idx;
+	size_t iov_offset;
+
+	err = rxr_local_iov_pos(rx_entry->iov, rx_entry->iov_count, offset,
+				&iov_idx, &iov_offset);
+
+	assert(err == 0);
+	assert(iov_index >=0 && iov_index < rx_entry->iov_count);
+	assert(efa_ep_is_cuda_mr(rx_entry->desc[iov_index]));
+	assert(iov_offset >= 0 && iov_offset + data_size <= rx_entry->iov[iov_index].iov_len);
+
+	dest_buf = (char *)rx_entry->iov[iov_idx].iov_base + iov_offset;
+
+	if (rxr_ep->rdm_self_addr == FI_ADDR_NOTAVAIL) {
+		efa_ep = container_of(ep->rdm_ep, struct efa_ep, util_ep.ep_fid);
+		err = efa_av_insert_addr(efa_ep->av, (struct efa_ep_addr *)rxr_ep->core_addr,
+				 &rxr_ep->rdm_self_addr, 0, NULL);
+		if (OFI_UNLIKELY(err)) {
+			FI_WARN(
+			return err;
+		}
+	}
+
+	assert(rxr_ep->rdm_self_addr != FI_ADDR_NOTAVAIL);
+
+	err = fi_read(rxr_ep->rdm_ep,
+		      data, data_size, fi_mr_desc(pkt_entry->mr),
+		      rxr_ep->rdm_self_addr,
+		      dest_buf, fi_mr_key(rx_entry->desc[iov_idx]),
+		      pkt_entry);
+
+	if (OFI_UNLIKELY(err)) {
+		FI_WARN(FI_LOG_CQ, &rxr_prov, "Failed to post read to copy data\n");
+	}
+
+	return err;
+}
+
+/*
  *   rxr_pkt_init_ctrl() uses init functions declared in rxr_pkt_type.h
  */
 static
@@ -452,12 +502,43 @@ ssize_t rxr_pkt_wait_handshake(struct rxr_ep *ep, fi_addr_t addr, struct rxr_pee
 /*
  *   Functions used to handle packet send completion
  */
+void rxr_pkt_handle_copy_by_read_completion(struct rxr_ep *ep, struct rxr_pkt_entry *pkt_entry)
+{
+	switch (rxr_get_base_hdr(pkt_entry->pkt)->type) {
+	case RXR_DATA_PKT:
+		rxr_pkt_handle_data_data_copied(ep, pkt_entry);
+		break;
+	case RXR_EAGER_MSGRTM_PKT:
+	case RXR_EAGER_TAGRTM_PKT:
+	case RXR_MEDIUM_MSGRTM_PKT:
+	case RXR_MEDIUM_TAGRTM_PKT:
+	case RXR_LONG_MSGRTM_PKT:
+	case RXR_LONG_TAGRTM_PKT:
+		rxr_pkt_handle_rtm_data_copied(ep, pkt_entry);
+		break;
+	default:
+		FI_WARN(&rxr_prov, FI_LOG_CQ,
+			"invalid control pkt type %d\n",
+			rxr_get_base_hdr(pkt_entry->pkt)->type);
+		assert(0 && "invalid control pkt type");
+		rxr_cq_handle_cq_error(ep, -FI_EIO);
+		return;
+	}
+}
+
 void rxr_pkt_handle_send_completion(struct rxr_ep *ep, struct fi_cq_data_entry *comp)
 {
 	struct rxr_pkt_entry *pkt_entry;
 	struct rxr_peer *peer;
 
 	pkt_entry = (struct rxr_pkt_entry *)comp->op_context;
+
+#ifdef HAVE_LIBCUDA
+	if (pkt_entry->state == RXR_PKT_ENTRY_LOCAL_READ) {
+		rxr_pkt_handle_copy_by_read_completion(ep, pkt_entry);
+		return;
+	}
+#endif
 
 	switch (rxr_get_base_hdr(pkt_entry->pkt)->type) {
 	case RXR_HANDSHAKE_PKT:
