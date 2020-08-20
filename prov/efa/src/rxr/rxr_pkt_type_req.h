@@ -339,6 +339,9 @@ void rxr_pkt_rtm_init_rx_entry(struct rxr_pkt_entry *pkt_entry,
  *            rxr_pkt_handle_rtm_recv() and
  *            rxr_msg_handle_unexp_match()
  */
+void rxr_pkt_handle_rtm_data_copied(struct rxr_ep *ep,
+				    struct rxr_pkt_entry *pkt_entry);
+
 ssize_t rxr_pkt_proc_matched_rtm(struct rxr_ep *ep,
 				 struct rxr_rx_entry *rx_entry,
 				 struct rxr_pkt_entry *pkt_entry);

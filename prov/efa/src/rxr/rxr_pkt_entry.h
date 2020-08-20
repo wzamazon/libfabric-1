@@ -129,6 +129,9 @@ void rxr_pkt_entry_release_tx(struct rxr_ep *ep,
 void rxr_pkt_entry_release_rx(struct rxr_ep *ep,
 			      struct rxr_pkt_entry *pkt_entry);
 
+void rxr_pkt_entry_release_single_rx(struct rxr_ep *ep,
+				     struct rxr_pkt_entry *pkt_entry);
+
 void rxr_pkt_entry_append(struct rxr_pkt_entry *dst,
 			  struct rxr_pkt_entry *src);
 

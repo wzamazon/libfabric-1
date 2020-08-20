@@ -154,7 +154,6 @@ void rxr_pkt_entry_release_tx(struct rxr_ep *ep,
 	}
 }
 
-static
 void rxr_pkt_entry_release_single_rx(struct rxr_ep *ep,
 				     struct rxr_pkt_entry *pkt_entry)
 {
