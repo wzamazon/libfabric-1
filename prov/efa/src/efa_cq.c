@@ -153,6 +153,8 @@ ssize_t efa_cq_readfrom(struct fid_cq *cq_fid, void *buf, size_t count,
 			break;
 		}
 
+		fprintf(stderr, "ret: %ld status: %d context: %p\n",
+			ret, wc.ibv_wc.status, (void *)wc.ibv_wc.wr_id);
 		/* Insert error entry into wcq */
 		if (wc.ibv_wc.status) {
 			wce = ofi_buf_alloc(cq->wce_pool);
