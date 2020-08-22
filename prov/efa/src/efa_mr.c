@@ -31,6 +31,7 @@
  */
 
 #include "config.h"
+#include <gdrapi.h>
 #include <ofi_util.h>
 #include "efa.h"
 
@@ -234,6 +235,34 @@ static int efa_mr_dereg_impl(struct efa_mr *efa_mr)
 	int err;
 
 	efa_domain = efa_mr->domain;
+
+	if (efa_mr->peer.iface == FI_HMEM_CUDA) {
+		gdr_info_t  info;
+
+		err = gdr_get_info(efa_mr->domain->gdr, efa_mr->gdr_mr, &info);
+		if (err) {
+			EFA_WARN(FI_LOG_MR, "gdr_get_info failed! err=%d\n", err);
+			ret = err;
+			goto ibv_dereg_mr;
+		}
+
+		efa_mr->gdr_ptr = (char *)efa_mr->gdr_ptr + ((CUdeviceptr)(uintptr_t)efa_mr->ibv_mr->addr - info.va);
+		err = gdr_unmap(efa_mr->domain->gdr, efa_mr->gdr_mr, efa_mr->gdr_ptr, efa_mr->ibv_mr->length);
+		if (err) {
+			EFA_WARN(FI_LOG_MR, "gdr_unmap failed! err=%d\n", err);
+			ret = err;
+			goto ibv_dereg_mr;
+		}
+
+		err = gdr_unpin_buffer(efa_mr->domain->gdr, efa_mr->gdr_mr);
+		if (err) {
+			EFA_WARN(FI_LOG_MR, "gdr_unmap failed! err=%d\n", err);
+			ret = err;
+			goto ibv_dereg_mr;
+		}
+	}
+
+ibv_dereg_mr:
 	err = -ibv_dereg_mr(efa_mr->ibv_mr);
 	if (err) {
 		EFA_WARN(FI_LOG_MR,
@@ -326,8 +355,39 @@ static int efa_mr_reg_impl(struct efa_mr *efa_mr, uint64_t flags, void *attr)
 		efa_mr->peer.iface = mr_attr->iface;
 	else
 		efa_mr->peer.iface = FI_HMEM_SYSTEM;
-	if (efa_mr->peer.iface == FI_HMEM_CUDA)
+	if (efa_mr->peer.iface == FI_HMEM_CUDA) {
 		efa_mr->peer.device.cuda = mr_attr->device.cuda;
+
+		assert(efa_mr->domain->gdr);
+		ret = gdr_pin_buffer(efa_mr->domain->gdr,
+ 				     (CUdeviceptr)(uintptr_t)mr_attr->mr_iov->iov_base,
+				     mr_attr->mr_iov->iov_len,
+				     0, 0, &efa_mr->gdr_mr);
+		if (ret) {
+			EFA_WARN(FI_LOG_MR, "gdr_pin_buffer failed! err=%d", ret);
+			ibv_dereg_mr(efa_mr->ibv_mr);
+			return ret;
+		}
+
+		ret = gdr_map(efa_mr->domain->gdr, efa_mr->gdr_mr, &efa_mr->gdr_ptr, mr_attr->mr_iov->iov_len);
+		if (ret) {
+			EFA_WARN(FI_LOG_MR, "gdr_map failed! err=%d", ret);
+			ibv_dereg_mr(efa_mr->ibv_mr);
+			return ret;
+		}
+
+		gdr_info_t info;
+
+		ret = gdr_get_info(efa_mr->domain->gdr, efa_mr->gdr_mr, &info);
+		if (ret) {
+			EFA_WARN(FI_LOG_MR, "gdr_get_info failed! err=%d", ret);
+			ibv_dereg_mr(efa_mr->ibv_mr);
+			return ret;
+		}
+
+		efa_mr->gdr_ptr = (char *)efa_mr->gdr_ptr + (info.va - (CUdeviceptr)(uintptr_t)mr_attr->mr_iov->iov_base);
+	}
+
 	assert(efa_mr->mr_fid.key != FI_KEY_NOTAVAIL);
 
 	mr_attr->requested_key = efa_mr->mr_fid.key;

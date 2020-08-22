@@ -509,6 +509,26 @@ FI_CHECK_PACKAGE([cuda],
 		 [AC_DEFINE([HAVE_LIBCUDA], [1],[CUDA support])],
 		 [], [])
 
+AC_ARG_WITH([gdrcopy],
+	    [AC_HELP_STRING([--with-gdrcopy=DIR],
+			    [Provide path to where the grdcopy development
+			    and runtime libraries are installed.])],
+	    [], [])
+
+FI_CHECK_PACKAGE([gdrcopy],
+		 [gdrapi.h],
+		 [gdrapi],
+		 [gdr_open],
+		 [-lgdrapi],
+		 [$with_gdrcopy],
+		 [],
+		 [AC_DEFINE([HAVE_GDRCOPY], [1],[gdrcopy support])],
+		 [], [])
+
+CPPFLAGS="$CPPFLAGS $gdrcopy_CPPFLAGS"
+LDFLAGS="$LDFLAGS $gdrcopy_LDFLAGS"
+LIBS="$LIBS $gdrcopy_LIBS"
+
 AC_ARG_WITH([ze],
 	AC_HELP_STRING([--with-ze=DIR], [Provide path to where the ZE
 					 libraries and headers are installed.]),

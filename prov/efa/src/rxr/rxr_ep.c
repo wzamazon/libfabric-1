@@ -46,6 +46,53 @@
 #include "rxr_read.h"
 #include "rxr_atomic.h"
 
+static inline
+void rxr_gdrcopy_to_device(struct efa_mr *efa_mr, void *devptr, void *hostptr, size_t len)
+{
+	ssize_t off;
+	void *gdr_ptr;
+
+	off = (char *)devptr - (char *)efa_mr->ibv_mr->addr;
+	assert(off >= 0 && off + len <= efa_mr->ibv_mr->length);
+	gdr_ptr = (char *)efa_mr->gdr_ptr + off;
+	gdr_copy_to_mapping(efa_mr->gdr_mr, gdr_ptr, hostptr, len);
+}
+
+size_t rxr_ep_copy_to_rx(struct rxr_rx_entry *rx_entry, size_t data_offset, char *data, size_t data_size)
+{
+	int i;
+	size_t len, copied;
+	void *iov_buf, *desc;
+
+	copied = 0;
+	for (i = 0; (i < rx_entry->iov_count) && (data_size > 0); ++i) {
+		len = rx_entry->iov[i].iov_len;
+
+		if (data_offset > len) {
+			data_offset -= len;
+			continue;
+		}
+
+		iov_buf = (char *)rx_entry->iov[i].iov_base + data_offset;
+		len -= data_offset;
+		desc = rx_entry->desc[i];
+
+		len = MIN(len, data_size);
+
+		if (efa_ep_is_cuda_mr(desc)) {
+			rxr_gdrcopy_to_device(desc, iov_buf, data + copied, len);
+		} else {
+			memcpy(iov_buf, data + copied, len);
+		}
+
+		data_offset = 0;
+		data_size -= len;
+		copied += len;
+	}
+
+	return copied;
+}
+
 struct rxr_rx_entry *rxr_ep_rx_entry_init(struct rxr_ep *ep,
 					  struct rxr_rx_entry *rx_entry,
 					  const struct fi_msg *msg,

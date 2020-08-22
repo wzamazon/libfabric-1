@@ -58,6 +58,7 @@
 #include <infiniband/verbs.h>
 #include <infiniband/efadv.h>
 
+#include <gdrapi.h>
 #include "ofi.h"
 #include "ofi_enosys.h"
 #include "ofi_list.h"
@@ -154,6 +155,7 @@ struct efa_domain {
 	struct ofi_mr_cache	cache;
 	struct efa_qp		**qp_table;
 	size_t			qp_table_sz_m1;
+	gdr_t			gdr;
 };
 
 extern struct fi_ops_mr efa_domain_mr_ops;
@@ -234,6 +236,9 @@ struct efa_mr {
 	/* Used only in rdm */
 	struct fid_mr		*shm_mr;
 	struct efa_mr_peer	peer;
+	/* Used only in gdrcopy */
+	gdr_mh_t		gdr_mr;
+	void			*gdr_ptr; /* user space ptr mapped to GPU memory */
 };
 
 struct efa_ep {

@@ -273,18 +273,10 @@ size_t rxr_pkt_req_copy_data(struct rxr_rx_entry *rx_entry,
 			     struct rxr_pkt_entry *pkt_entry,
 			     char *data, size_t data_size)
 {
-	struct efa_mr *desc;
 	size_t bytes_copied;
 	int bytes_left;
 
-	desc = rx_entry->desc[0];
-	bytes_copied = ofi_copy_to_hmem_iov(desc ? desc->peer.iface : FI_HMEM_SYSTEM,
-					    desc ? desc->peer.device.reserved : 0,
-					    rx_entry->iov,
-					    rx_entry->iov_count,
-					    0,
-					    data,
-					    data_size);
+	bytes_copied = rxr_ep_copy_to_rx(rx_entry, 0, data, data_size);
 
 	if (OFI_UNLIKELY(bytes_copied < data_size)) {
 		/* recv buffer is not big enough to hold req, this must be a truncated message */
@@ -828,7 +820,6 @@ ssize_t rxr_pkt_proc_matched_medium_rtm(struct rxr_ep *ep,
 					struct rxr_pkt_entry *pkt_entry)
 {
 	struct rxr_pkt_entry *cur;
-	struct efa_mr *desc;
 	char *data;
 	size_t offset, hdr_size, data_size;
 
@@ -838,14 +829,7 @@ ssize_t rxr_pkt_proc_matched_medium_rtm(struct rxr_ep *ep,
 		data = (char *)cur->pkt + hdr_size;
 		offset = rxr_get_medium_rtm_base_hdr(cur->pkt)->offset;
 		data_size = cur->pkt_size - hdr_size;
-		desc = rx_entry->desc[0];
-		ofi_copy_to_hmem_iov(desc ? desc->peer.iface : FI_HMEM_SYSTEM,
-				     desc ? desc->peer.device.reserved : 0,
-				     rx_entry->iov,
-				     rx_entry->iov_count,
-				     offset,
-				     data,
-				     data_size);
+		rxr_ep_copy_to_rx(rx_entry, offset, data, data_size);
 		rx_entry->bytes_done += data_size;
 		cur = cur->next;
 	}

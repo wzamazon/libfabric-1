@@ -249,7 +249,6 @@ int rxr_pkt_proc_data(struct rxr_ep *ep,
 		      size_t seg_size)
 {
 	struct rxr_peer *peer;
-	struct efa_mr *desc;
 	int64_t bytes_left, bytes_copied;
 	ssize_t ret = 0;
 
@@ -261,15 +260,7 @@ int rxr_pkt_proc_data(struct rxr_ep *ep,
 	/* we are sinking message for CANCEL/DISCARD entry */
 	if (OFI_LIKELY(!(rx_entry->rxr_flags & RXR_RECV_CANCEL)) &&
 	    rx_entry->cq_entry.len > seg_offset) {
-		desc = rx_entry->desc[0];
-		bytes_copied = ofi_copy_to_hmem_iov(desc ? desc->peer.iface : FI_HMEM_SYSTEM,
-						    desc ? desc->peer.device.reserved : 0,
-						    rx_entry->iov,
-						    rx_entry->iov_count,
-						    seg_offset,
-						    data,
-						    seg_size);
-
+		bytes_copied = rxr_ep_copy_to_rx(rx_entry, seg_offset, data, seg_size);
 		if (bytes_copied != MIN(seg_size, rx_entry->cq_entry.len - seg_offset)) {
 			FI_WARN(&rxr_prov, FI_LOG_CQ, "wrong size! bytes_copied: %ld\n",
 				bytes_copied);

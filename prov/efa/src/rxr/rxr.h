@@ -715,6 +715,11 @@ static inline void rxr_ep_peer_init_tx(struct rxr_peer *peer)
 	peer->tx_init = 1;
 }
 
+size_t rxr_ep_copy_to_rx(struct rxr_rx_entry *rx_entry,
+			 size_t data_offset,
+			 char *data,
+			 size_t data_size);
+
 struct rxr_rx_entry *rxr_ep_get_rx_entry(struct rxr_ep *ep,
 					 const struct fi_msg *msg,
 					 uint64_t tag,
