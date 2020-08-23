@@ -821,7 +821,7 @@ void rxr_pkt_handle_medium_rtm_data_copied(struct rxr_ep *ep, struct rxr_pkt_ent
 		rxr_msg_multi_recv_free_posted_entry(ep, rx_entry);
 		rxr_release_rx_entry(ep, rx_entry);
 	} else {
-		rxr_pkt_entry_release_single_rx(ep, pkt_entry);
+		rxr_pkt_entry_release_rx(ep, pkt_entry);
 	}
 }
 
@@ -896,10 +896,12 @@ ssize_t rxr_pkt_proc_matched_medium_rtm(struct rxr_ep *ep,
 
 		/* 
 		 * cur will be released by rxr_pkt_handle_rtm_data_copied(), so we have to
-		 * save cur->next here.
+		 * save cur->next here. we also set cur->next to NULL, which is required by
+		 * rxr_pkt_entry_release_rx().
 		 */
 		nxt = cur->next; 
-				    
+		cur->next = NULL;
+
 		if (efa_ep_is_cuda_mr(desc)) {
 			err = rxr_pkt_post_read_to_copy_data(ep, cur, data, data_size, rx_entry, offset);
 			if (OFI_UNLIKELY(err))

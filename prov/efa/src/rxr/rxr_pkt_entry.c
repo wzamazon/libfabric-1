@@ -154,9 +154,14 @@ void rxr_pkt_entry_release_tx(struct rxr_ep *ep,
 	}
 }
 
-void rxr_pkt_entry_release_single_rx(struct rxr_ep *ep,
-				     struct rxr_pkt_entry *pkt_entry)
+void rxr_pkt_entry_release_rx(struct rxr_ep *ep,
+			      struct rxr_pkt_entry *pkt_entry)
 {
+	assert(pkt_entry->next == NULL);
+
+	if (ep->use_zcpy_rx && pkt_entry->type == RXR_PKT_ENTRY_USER)
+		return;
+
 	if (pkt_entry->type == RXR_PKT_ENTRY_POSTED) {
 		struct rxr_peer *peer;
 
@@ -178,39 +183,26 @@ void rxr_pkt_entry_release_single_rx(struct rxr_ep *ep,
 	ofi_buf_free(pkt_entry);
 }
 
-void rxr_pkt_entry_release_rx(struct rxr_ep *ep,
-			      struct rxr_pkt_entry *pkt_entry)
-{
-	struct rxr_pkt_entry *next;
-
-	if (ep->use_zcpy_rx && pkt_entry->type == RXR_PKT_ENTRY_USER)
-		return;
-
-	assert(pkt_entry->next == NULL);
-	while (pkt_entry) {
-		next = pkt_entry->next;
-		rxr_pkt_entry_release_single_rx(ep, pkt_entry);
-		pkt_entry = next;
-	}
-}
-
-static
 void rxr_pkt_entry_copy(struct rxr_ep *ep,
 			struct rxr_pkt_entry *dest,
 			struct rxr_pkt_entry *src,
 			int new_entry_type)
 {
 	FI_DBG(&rxr_prov, FI_LOG_EP_CTRL,
-	       "Copying packet out of posted buffer\n");
-	assert(src->type == RXR_PKT_ENTRY_POSTED);
-	memcpy(dest, src, sizeof(struct rxr_pkt_entry));
-	memcpy(dest->pkt, src->pkt, ep->mtu_size);
+	       "Copying packet. src_type: %d dest_type: %d\n",
+	       src->type, new_entry_type);
+
 	dlist_init(&dest->entry);
 #if ENABLE_DEBUG
 	dlist_init(&dest->dbg_entry);
 #endif
-	dest->state = RXR_PKT_ENTRY_IN_USE;
+	dest->x_entry = src->x_entry;
+	dest->pkt_size = src->pkt_size;
+	dest->addr = src->addr;
 	dest->type = new_entry_type;
+	dest->state = RXR_PKT_ENTRY_IN_USE;
+	dest->next = NULL;
+	memcpy(dest->pkt, src->pkt, ep->mtu_size);
 }
 
 /*
