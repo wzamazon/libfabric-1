@@ -133,6 +133,7 @@ ssize_t rxr_pkt_post_read_to_copy_data(struct rxr_ep *rxr_ep,
 	assert(iov_offset + data_size <= rx_entry->iov[iov_idx].iov_len);
 
 	dest_buf = (char *)rx_entry->iov[iov_idx].iov_base + iov_offset;
+
 	pkt_entry->state = RXR_PKT_ENTRY_COPY_BY_READ;
 	if (rxr_ep->rdm_self_addr == FI_ADDR_NOTAVAIL) {
 		efa_ep = container_of(rxr_ep->rdm_ep, struct efa_ep, util_ep.ep_fid);
@@ -144,17 +145,15 @@ ssize_t rxr_pkt_post_read_to_copy_data(struct rxr_ep *rxr_ep,
 		}
 	}
 
+	assert(pkt_entry->mr);
 	assert(rxr_ep->rdm_self_addr != FI_ADDR_NOTAVAIL);
-	fprintf(stderr, "read dest_buf: %p size: %ld desc: %p fi_addr: %d, data: %p rma_key: %ld\n",
-		dest_buf, data_size, rx_entry->desc[iov_idx], (int)rxr_ep->rdm_self_addr,
-		data,fi_mr_key(pkt_entry->mr));
 
 	err = fi_read(rxr_ep->rdm_ep,
 		      dest_buf, data_size, rx_entry->desc[iov_idx],
 		      rxr_ep->rdm_self_addr,
 		      (uint64_t)data, fi_mr_key(pkt_entry->mr),
 		      pkt_entry);
-	fprintf(stderr, "read submitted! err: %ld context: %p\n", err, pkt_entry);
+
 	if (OFI_UNLIKELY(err)) {
 		FI_WARN(&rxr_prov, FI_LOG_CQ, "Failed to post read to copy data\n");
 	}
