@@ -50,12 +50,12 @@ static inline
 void rxr_gdrcopy_to_device(struct efa_mr *efa_mr, void *devptr, void *hostptr, size_t len)
 {
 	ssize_t off;
-	void *gdr_ptr;
+	void *gdrcopy_user_ptr;
 
-	off = (char *)devptr - (char *)efa_mr->ibv_mr->addr;
-	assert(off >= 0 && off + len <= efa_mr->ibv_mr->length);
-	gdr_ptr = (char *)efa_mr->gdr_ptr + off;
-	gdr_copy_to_mapping(efa_mr->gdr_mr, gdr_ptr, hostptr, len);
+	off = (char *)devptr - (char *)efa_mr->gdrcopy_cuda_ptr;
+	assert(off >= 0 && off + len <= efa_mr->gdrcopy_length);
+	gdrcopy_user_ptr = (char *)efa_mr->gdrcopy_user_ptr + off;
+	gdr_copy_to_mapping(efa_mr->gdrcopy_mr, gdrcopy_user_ptr, hostptr, len);
 }
 
 size_t rxr_ep_copy_to_rx(struct rxr_rx_entry *rx_entry, size_t data_offset, char *data, size_t data_size)

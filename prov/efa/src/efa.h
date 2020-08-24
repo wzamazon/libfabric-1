@@ -237,8 +237,10 @@ struct efa_mr {
 	struct fid_mr		*shm_mr;
 	struct efa_mr_peer	peer;
 	/* Used only in gdrcopy */
-	gdr_mh_t		gdr_mr;
-	void			*gdr_ptr; /* user space ptr mapped to GPU memory */
+	gdr_mh_t		gdrcopy_mr;
+	void 			*gdrcopy_cuda_ptr; /* page aligned gpu pointer */
+	void			*gdrcopy_user_ptr; /* user space ptr mapped to GPU memory */
+	size_t 			gdrcopy_length; /* page aligned length */
 };
 
 struct efa_ep {

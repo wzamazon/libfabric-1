@@ -237,9 +237,10 @@ static int efa_mr_dereg_impl(struct efa_mr *efa_mr)
 	efa_domain = efa_mr->domain;
 
 	if (efa_mr->peer.iface == FI_HMEM_CUDA) {
+#if 0
 		gdr_info_t  info;
 
-		err = gdr_get_info(efa_mr->domain->gdr, efa_mr->gdr_mr, &info);
+		err = gdr_get_info(efa_mr->domain->gdr, efa_mr->gdrcopy_mr, &info);
 		if (err) {
 			EFA_WARN(FI_LOG_MR, "gdr_get_info failed! err=%d\n", err);
 			ret = err;
@@ -247,14 +248,16 @@ static int efa_mr_dereg_impl(struct efa_mr *efa_mr)
 		}
 
 		efa_mr->gdr_ptr = (char *)efa_mr->gdr_ptr + ((CUdeviceptr)(uintptr_t)efa_mr->ibv_mr->addr - info.va);
-		err = gdr_unmap(efa_mr->domain->gdr, efa_mr->gdr_mr, efa_mr->gdr_ptr, efa_mr->ibv_mr->length);
+#endif
+		err = gdr_unmap(efa_mr->domain->gdr, efa_mr->gdrcopy_mr,
+				efa_mr->gdrcopy_user_ptr, efa_mr->gdrcopy_length);
 		if (err) {
 			EFA_WARN(FI_LOG_MR, "gdr_unmap failed! err=%d\n", err);
 			ret = err;
 			goto ibv_dereg_mr;
 		}
 
-		err = gdr_unpin_buffer(efa_mr->domain->gdr, efa_mr->gdr_mr);
+		err = gdr_unpin_buffer(efa_mr->domain->gdr, efa_mr->gdrcopy_mr);
 		if (err) {
 			EFA_WARN(FI_LOG_MR, "gdr_unmap failed! err=%d\n", err);
 			ret = err;
@@ -358,34 +361,49 @@ static int efa_mr_reg_impl(struct efa_mr *efa_mr, uint64_t flags, void *attr)
 	if (efa_mr->peer.iface == FI_HMEM_CUDA) {
 		efa_mr->peer.device.cuda = mr_attr->device.cuda;
 
+		/* gdrcopy registration */
+		uint64_t cuda_page_size = 65536;
+		uintptr_t cuda_bgn = (uintptr_t)mr_attr->mr_iov->iov_base;
+		uintptr_t cuda_end = (uintptr_t)mr_attr->mr_iov->iov_base + mr_attr->mr_iov->iov_len;
+
+		cuda_bgn = cuda_bgn & ~(cuda_page_size - 1);
+		cuda_end = (cuda_end & ~(cuda_page_size - 1)) + cuda_page_size;
+
+		fprintf(stderr, "cuda_pin_buffer, ptr: %p, len: %ld\n",
+			(void *)cuda_bgn, (cuda_end - cuda_bgn));
 		assert(efa_mr->domain->gdr);
 		ret = gdr_pin_buffer(efa_mr->domain->gdr,
- 				     (CUdeviceptr)(uintptr_t)mr_attr->mr_iov->iov_base,
-				     mr_attr->mr_iov->iov_len,
-				     0, 0, &efa_mr->gdr_mr);
+ 				     (CUdeviceptr)cuda_bgn,
+				     cuda_end - cuda_bgn,
+				     0, 0, &efa_mr->gdrcopy_mr);
 		if (ret) {
 			EFA_WARN(FI_LOG_MR, "gdr_pin_buffer failed! err=%d", ret);
 			ibv_dereg_mr(efa_mr->ibv_mr);
 			return ret;
 		}
 
-		ret = gdr_map(efa_mr->domain->gdr, efa_mr->gdr_mr, &efa_mr->gdr_ptr, mr_attr->mr_iov->iov_len);
+		efa_mr->gdrcopy_cuda_ptr = (void *)cuda_bgn;
+		efa_mr->gdrcopy_length = cuda_end - cuda_bgn;
+
+		ret = gdr_map(efa_mr->domain->gdr, efa_mr->gdrcopy_mr,
+			      &efa_mr->gdrcopy_user_ptr, efa_mr->gdrcopy_length);
 		if (ret) {
+			assert(0);
 			EFA_WARN(FI_LOG_MR, "gdr_map failed! err=%d", ret);
 			ibv_dereg_mr(efa_mr->ibv_mr);
 			return ret;
 		}
 
+#if 0
 		gdr_info_t info;
 
-		ret = gdr_get_info(efa_mr->domain->gdr, efa_mr->gdr_mr, &info);
+		ret = gdr_get_info(efa_mr->domain->gdr, efa_mr->gdrcopy_mr, &info);
 		if (ret) {
 			EFA_WARN(FI_LOG_MR, "gdr_get_info failed! err=%d", ret);
 			ibv_dereg_mr(efa_mr->ibv_mr);
 			return ret;
 		}
-
-		efa_mr->gdr_ptr = (char *)efa_mr->gdr_ptr + (info.va - (CUdeviceptr)(uintptr_t)mr_attr->mr_iov->iov_base);
+#endif
 	}
 
 	assert(efa_mr->mr_fid.key != FI_KEY_NOTAVAIL);
