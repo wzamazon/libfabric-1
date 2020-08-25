@@ -58,7 +58,7 @@
 #include <infiniband/verbs.h>
 #include <infiniband/efadv.h>
 
-#include <gdrapi.h>
+#include "efa_gdrcopy.h"
 #include "ofi.h"
 #include "ofi_enosys.h"
 #include "ofi_list.h"
@@ -237,10 +237,7 @@ struct efa_mr {
 	struct fid_mr		*shm_mr;
 	struct efa_mr_peer	peer;
 	/* Used only in gdrcopy */
-	gdr_mh_t		gdrcopy_mr;
-	void 			*gdrcopy_cuda_ptr; /* page aligned gpu pointer */
-	void			*gdrcopy_user_ptr; /* user space ptr mapped to GPU memory */
-	size_t 			gdrcopy_length; /* page aligned length */
+	struct efa_gdrcopy_info gdrcopy;
 };
 
 struct efa_ep {

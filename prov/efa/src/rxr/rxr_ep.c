@@ -46,18 +46,6 @@
 #include "rxr_read.h"
 #include "rxr_atomic.h"
 
-static inline
-void rxr_gdrcopy_to_device(struct efa_mr *efa_mr, void *devptr, void *hostptr, size_t len)
-{
-	ssize_t off;
-	void *gdrcopy_user_ptr;
-
-	off = (char *)devptr - (char *)efa_mr->gdrcopy_cuda_ptr;
-	assert(off >= 0 && off + len <= efa_mr->gdrcopy_length);
-	gdrcopy_user_ptr = (char *)efa_mr->gdrcopy_user_ptr + off;
-	gdr_copy_to_mapping(efa_mr->gdrcopy_mr, gdrcopy_user_ptr, hostptr, len);
-}
-
 size_t rxr_ep_copy_to_rx(struct rxr_rx_entry *rx_entry, size_t data_offset, char *data, size_t data_size)
 {
 	int i;
@@ -80,7 +68,7 @@ size_t rxr_ep_copy_to_rx(struct rxr_rx_entry *rx_entry, size_t data_offset, char
 		len = MIN(len, data_size);
 
 		if (efa_ep_is_cuda_mr(desc)) {
-			rxr_gdrcopy_to_device(desc, iov_buf, data + copied, len);
+			efa_gdrcopy_to_device(desc, iov_buf, data + copied, len);
 		} else {
 			memcpy(iov_buf, data + copied, len);
 		}
