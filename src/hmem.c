@@ -96,6 +96,17 @@ static struct ofi_hmem_ops hmem_ops[] = {
 		.open_handle = ze_hmem_open_handle,
 		.close_handle = ze_hmem_close_handle,
 	},
+	[FI_HMEM_GDRCOPY] = {
+		.initialized = false,
+		.init = gdrcopy_hmem_init,
+		.cleanup = gdrcopy_hmem_cleanup,
+		.copy_to_hmem = gdrcopy_to_dev,
+		.copy_from_hmem = gdrcopy_from_dev,
+		.is_addr_valid = gdrcopy_is_addr_valid,
+		.get_handle = ofi_hmem_no_get_handle,
+		.open_handle = ofi_hmem_no_open_handle,
+		.close_handle = ofi_hmem_no_close_handle,
+	},
 };
 
 static inline int ofi_copy_to_hmem(enum fi_hmem_iface iface, uint64_t device,
