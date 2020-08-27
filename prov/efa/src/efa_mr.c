@@ -178,13 +178,6 @@ static int efa_mr_cache_regattr(struct fid *fid, const struct fi_mr_attr *attr,
 	efa_mr = (struct efa_mr *)entry->data;
 	efa_mr->entry = entry;
 
-	if (domain->util_domain.info_domain_caps & FI_HMEM)
-		efa_mr->peer.iface = attr->iface;
-	else
-		efa_mr->peer.iface = FI_HMEM_SYSTEM;
-	if (efa_mr->peer.iface == FI_HMEM_CUDA)
-		efa_mr->peer.device.cuda = attr->device.cuda;
-
 	*mr_fid = &efa_mr->mr_fid;
 	return 0;
 }
@@ -234,6 +227,20 @@ static int efa_mr_dereg_impl(struct efa_mr *efa_mr)
 	int err;
 
 	efa_domain = efa_mr->domain;
+
+	if (efa_mr->peer.iface == FI_HMEM_GDRCOPY) {
+#ifdef HAVE_GDRCOPY
+		err = ofi_gdrcopy_dereg(efa_domain->gdr, &efa_mr->peer.gdrcopy);
+		if (err) {
+			EFA_WARN(FI_LOG_MR,
+				"Unable to deregister memory handle with gdrcopy\n");
+			ret = err;
+		}
+#else
+		assert(0 && "invalid peer interface type");
+#endif
+	}
+
 	err = -ibv_dereg_mr(efa_mr->ibv_mr);
 	if (err) {
 		EFA_WARN(FI_LOG_MR,
@@ -322,12 +329,40 @@ static int efa_mr_reg_impl(struct efa_mr *efa_mr, uint64_t flags, void *attr)
 	 * Skipping the domain type check is okay here since util_domain is at
 	 * the beginning of efa_domain and rxr_domain.
 	 */
-	if (efa_mr->domain->util_domain.info_domain_caps & FI_HMEM)
-		efa_mr->peer.iface = mr_attr->iface;
-	else
+	if (efa_mr->domain->util_domain.info_domain_caps & FI_HMEM) {
+		if (mr_attr->iface == FI_HMEM_CUDA || mr_attr->iface == FI_HMEM_GDRCOPY) {
+			efa_mr->peer.iface = FI_HMEM_GDRCOPY;
+		} else {
+			assert(mr_attr->iface == FI_HMEM_SYSTEM);
+			efa_mr->peer.iface = mr_attr->iface;
+		}
+	} else {
 		efa_mr->peer.iface = FI_HMEM_SYSTEM;
-	if (efa_mr->peer.iface == FI_HMEM_CUDA)
-		efa_mr->peer.device.cuda = mr_attr->device.cuda;
+	}
+
+	if (efa_mr->peer.iface == FI_HMEM_GDRCOPY) {
+#ifdef HAVE_GDRCOPY
+		assert(efa_mr->domain->gdr);
+		ret = ofi_gdrcopy_reg(mr_attr->mr_iov->iov_base,
+				      mr_attr->mr_iov->iov_len,
+				      efa_mr->domain->gdr,
+				      &efa_mr->peer.gdrcopy);
+		if (ret) {
+			EFA_WARN(FI_LOG_MR, "Unable to register with gdrcopy: %s\n",
+				 fi_strerror(ret));
+			ibv_dereg_mr(efa_mr->ibv_mr);
+			return ret;
+		}
+
+		efa_mr->peer.device.reserved = (uint64_t)&efa_mr->peer.gdrcopy;
+#else
+		EFA_WARN(FI_LOG_MR, "Unable to register with gdrcopy because this version of libfabric does not support\n");
+		ibv_dereg_mr(efa_mr->ibv_mr);
+		efa_mr->peer.device.reserved = 0;
+		return -FI_EINVAL;
+#endif
+	}
+
 	assert(efa_mr->mr_fid.key != FI_KEY_NOTAVAIL);
 
 	mr_attr->requested_key = efa_mr->mr_fid.key;

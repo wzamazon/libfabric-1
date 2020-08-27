@@ -154,6 +154,9 @@ struct efa_domain {
 	struct ofi_mr_cache	cache;
 	struct efa_qp		**qp_table;
 	size_t			qp_table_sz_m1;
+#ifdef HAVE_GDRCOPY
+	gdr_t			gdr;
+#endif
 };
 
 extern struct fi_ops_mr efa_domain_mr_ops;
@@ -223,6 +226,9 @@ struct efa_mr_peer {
 		uint64_t        reserved;
 		int             cuda;
 	} device;
+#ifdef HAVE_GDRCOPY
+	struct ofi_gdrcopy_handle gdrcopy;
+#endif
 };
 
 struct efa_mr {
@@ -462,7 +468,7 @@ void efa_peer_reset(struct rxr_peer *peer)
 
 static inline bool efa_ep_is_cuda_mr(struct efa_mr *efa_mr)
 {
-	return efa_mr ? (efa_mr->peer.iface == FI_HMEM_CUDA): false;
+	return efa_mr ? (efa_mr->peer.iface == FI_HMEM_GDRCOPY): false;
 }
 
 #endif /* EFA_H */

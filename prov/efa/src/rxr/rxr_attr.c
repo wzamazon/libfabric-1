@@ -37,7 +37,7 @@
 const uint32_t rxr_poison_value = 0xdeadbeef;
 #endif
 
-#ifdef HAVE_LIBCUDA
+#ifdef HAVE_GDRCOPY
 #define EFA_HMEM_CAP FI_HMEM
 #else
 #define EFA_HMEM_CAP 0
