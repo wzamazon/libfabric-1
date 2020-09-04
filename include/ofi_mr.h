@@ -136,6 +136,10 @@ struct ofi_mem_monitor {
 	 */
 	bool (*valid)(struct ofi_mem_monitor *notifier, const void *addr,
 		      size_t len, union ofi_mr_hmem_info *hmem_info);
+	/* Indicates whether this monitor requires freeing memory
+	 * to be deferred until after exiting the monitor functions.
+	 */
+	int defer;
 };
 
 void ofi_monitor_init(struct ofi_mem_monitor *monitor);
@@ -321,7 +325,8 @@ int ofi_mr_cache_init(struct util_domain *domain,
 		      struct ofi_mr_cache *cache);
 void ofi_mr_cache_cleanup(struct ofi_mr_cache *cache);
 
-void ofi_mr_cache_notify(struct ofi_mr_cache *cache, const void *addr, size_t len);
+void ofi_mr_cache_notify(struct ofi_mr_cache *cache, const void *addr,
+			 size_t len, int defer);
 
 bool ofi_mr_cache_flush(struct ofi_mr_cache *cache, bool flush_lru);
 

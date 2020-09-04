@@ -125,21 +125,42 @@ static void util_mr_uncache_entry_storage(struct ofi_mr_cache *cache,
 }
 
 static void util_mr_uncache_entry(struct ofi_mr_cache *cache,
-				  struct ofi_mr_entry *entry)
+				  struct ofi_mr_entry *entry,
+				  int defer)
 {
 	util_mr_uncache_entry_storage(cache, entry);
 
 	if (entry->use_cnt == 0) {
 		dlist_remove(&entry->list_entry);
-		dlist_insert_tail(&entry->list_entry, &cache->flush_list);
+		if (defer) {
+			dlist_insert_tail(&entry->list_entry, &cache->flush_list);
+		} else {
+			/* This is safe to unlock since the mm_lock
+			 * only protects the cache storage which is not
+			 * accessed in util_mr_free_entry. It is necessary
+			 * to unlock before util_mr_free_entry because the
+			 * mm_lock needs to be unlocked before a possible
+			 * monitor triggering event (such as a free or
+			 * deregistration) or else there will be a
+			 * deadlock (The monitor will try to obtain this
+			 * lock before calling ofi_mr_cache_notify).
+			 */
+			pthread_mutex_unlock(&mm_lock);
+			util_mr_free_entry(cache, entry);
+			pthread_mutex_lock(&mm_lock);
+		}
 	} else {
 		cache->uncached_cnt++;
 		cache->uncached_size += entry->info.iov.iov_len;
 	}
 }
 
-/* Caller must hold ofi_mem_monitor lock as well as unsubscribe from the region */
-void ofi_mr_cache_notify(struct ofi_mr_cache *cache, const void *addr, size_t len)
+/* Caller must hold ofi_mem_monitor lock as well as unsubscribe from the region.
+ * Defer indicates whether the region should be freed now or deferred and put
+ * on the flush list.
+ */
+void ofi_mr_cache_notify(struct ofi_mr_cache *cache, const void *addr,
+			 size_t len, int defer)
 {
 	struct ofi_mr_entry *entry;
 	struct iovec iov;
@@ -150,7 +171,7 @@ void ofi_mr_cache_notify(struct ofi_mr_cache *cache, const void *addr, size_t le
 
 	for (entry = cache->storage.overlap(&cache->storage, &iov); entry;
 	     entry = cache->storage.overlap(&cache->storage, &iov))
-		util_mr_uncache_entry(cache, entry);
+		util_mr_uncache_entry(cache, entry, defer);
 }
 
 bool ofi_mr_cache_flush(struct ofi_mr_cache *cache, bool flush_lru)
@@ -335,7 +356,12 @@ int ofi_mr_cache_search(struct ofi_mr_cache *cache, const struct fi_mr_attr *att
 
 		/* Purge regions that overlap with new region */
 		while (*entry) {
-			util_mr_uncache_entry(cache, *entry);
+			/* Since ofi_mr_cache_search won't be called
+			 * from within a monitor, there is no reason
+			 * to defer frees, thus default the defer
+			 * flag to 0.
+			 */
+			util_mr_uncache_entry(cache, *entry, 0);
 			*entry = cache->storage.find(&cache->storage, &info);
 		}
 		pthread_mutex_unlock(&mm_lock);

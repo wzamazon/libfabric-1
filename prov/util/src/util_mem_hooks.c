@@ -68,6 +68,7 @@ struct ofi_memhooks memhooks = {
 	.monitor.cleanup = ofi_monitor_cleanup,
 	.monitor.start = ofi_memhooks_start,
 	.monitor.stop = ofi_memhooks_stop,
+	.monitor.defer = 0,
 };
 struct ofi_mem_monitor *memhooks_monitor = &memhooks.monitor;
 

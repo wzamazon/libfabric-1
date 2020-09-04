@@ -47,6 +47,16 @@ static struct ofi_uffd uffd = {
 	.monitor.cleanup = ofi_monitor_cleanup,
 	.monitor.start = ofi_uffd_start,
 	.monitor.stop = ofi_uffd_stop,
+	/* The userfault fd monitor requires for events that could
+	 * trigger it to be handled outside of the monitor functions
+	 * itself. When a fault occurs on a monitored region, the
+	 * faulting thread is put to sleep until the event is read
+	 * via the userfault file descriptor. If this fault occurs
+	 * within the userfault handling thread, no threads will
+	 * read this event and our threads cannot progress, resulting
+	 * in a hang.
+	 */
+	.monitor.defer = 1,
 };
 struct ofi_mem_monitor *uffd_monitor = &uffd.monitor;
 
@@ -261,7 +271,7 @@ void ofi_monitor_notify(struct ofi_mem_monitor *monitor,
 
 	dlist_foreach_container(&monitor->list, struct ofi_mr_cache,
 				cache, notify_entries[monitor->iface]) {
-		ofi_mr_cache_notify(cache, addr, len);
+		ofi_mr_cache_notify(cache, addr, len, monitor->defer);
 	}
 }
 
