@@ -872,8 +872,12 @@ int efa_getinfo(uint32_t version, const char *node, const char *service,
 		goto out;
 
 	ret = efa_set_fi_address(node, service, flags, hints, *info);
-	if (ret)
-		goto out;
+	if (ret) {
+		EFA_WARN(FI_LOG_FABRIC,
+			 "efa_set_fi_address failed! node: %s service: %s\n",
+			 node, service);
+		ret = 0;
+	}
 
 	ofi_alter_info(*info, hints, version);
 
