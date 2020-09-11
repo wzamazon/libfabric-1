@@ -587,6 +587,9 @@ struct rxr_ep {
 	struct ofi_bufpool *rx_unexp_pkt_pool;
 	struct ofi_bufpool *rx_ooo_pkt_pool;
 
+	/* buffer pool for copy by read */
+	struct ofi_bufpool *rx_readcopy_pkt_pool;
+
 #ifdef ENABLE_EFA_POISONING
 	size_t tx_pkt_pool_entry_sz;
 	size_t rx_pkt_pool_entry_sz;

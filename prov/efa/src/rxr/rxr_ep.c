@@ -708,6 +708,9 @@ static void rxr_ep_free_res(struct rxr_ep *rxr_ep)
 	if (rxr_ep->readrsp_tx_entry_pool)
 		ofi_bufpool_destroy(rxr_ep->readrsp_tx_entry_pool);
 
+	if (rxr_ep->rx_readcopy_pkt_pool)
+		ofi_bufpool_destroy(rxr_ep->rx_readcopy_pkt_pool);
+
 	if (rxr_ep->rx_ooo_pkt_pool)
 		ofi_bufpool_destroy(rxr_ep->rx_ooo_pkt_pool);
 
@@ -1198,20 +1201,29 @@ int rxr_ep_init(struct rxr_ep *ep)
 		goto err_free_tx_pool;
 
 	if (rxr_env.rx_copy_unexp) {
-		ret = rxr_create_pkt_pool(ep, entry_sz,
-					  0, rxr_get_rx_pool_chunk_cnt(ep),
-					  0, &ep->rx_unexp_pkt_pool);
+		ret = ofi_bufpool_create(&ep->rx_unexp_pkt_pool, entry_sz,
+					 RXR_BUF_POOL_ALIGNMENT,
+					 0, rxr_get_rx_pool_chunk_cnt(ep),
+					 0);
 		if (ret)
 			goto err_free_rx_pool;
 	}
 
 	if (rxr_env.rx_copy_ooo) {
-		ret = rxr_create_pkt_pool(ep, entry_sz,
-					  0, rxr_env.recvwin_size,
-					  0, &ep->rx_ooo_pkt_pool);
-
+		ret = ofi_bufpool_create(&ep->rx_ooo_pkt_pool, entry_sz,
+					 RXR_BUF_POOL_ALIGNMENT,
+					 0, rxr_env.recvwin_size,
+					 0);
 		if (ret)
 			goto err_free_rx_unexp_pool;
+	}
+
+	if (rxr_env.rx_copy_unexp || rxr_env.rx_copy_ooo) {
+		ret = rxr_create_pkt_pool(ep, entry_sz,
+					  0, rxr_get_rx_pool_chunk_cnt(ep),
+					  0, &ep->rx_readcopy_pkt_pool);
+		if (ret)
+			goto err_free_rx_ooo_pool;
 	}
 
 	ret = ofi_bufpool_create(&ep->tx_entry_pool,
@@ -1219,7 +1231,7 @@ int rxr_ep_init(struct rxr_ep *ep)
 				 RXR_BUF_POOL_ALIGNMENT,
 				 ep->tx_size, ep->tx_size, 0);
 	if (ret)
-		goto err_free_rx_ooo_pool;
+		goto err_free_rx_readcopy_pool;
 
 	ret = ofi_bufpool_create(&ep->read_entry_pool,
 				 sizeof(struct rxr_read_entry),
@@ -1315,6 +1327,9 @@ err_free_read_entry_pool:
 err_free_tx_entry_pool:
 	if (ep->tx_entry_pool)
 		ofi_bufpool_destroy(ep->tx_entry_pool);
+err_free_rx_readcopy_pool:
+	if ((rxr_env.rx_copy_ooo || rxr_env.rx_copy_unexp) && ep->rx_readcopy_pkt_pool)
+		ofi_bufpool_destroy(ep->rx_readcopy_pkt_pool);
 err_free_rx_ooo_pool:
 	if (rxr_env.rx_copy_ooo && ep->rx_ooo_pkt_pool)
 		ofi_bufpool_destroy(ep->rx_ooo_pkt_pool);
