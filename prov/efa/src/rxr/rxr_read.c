@@ -102,7 +102,7 @@ struct rxr_read_entry *rxr_read_alloc_entry(struct rxr_ep *ep, int entry_type, v
 	if (entry_type == RXR_TX_ENTRY) {
 		tx_entry = (struct rxr_tx_entry *)x_entry;
 		assert(tx_entry->op == ofi_op_read_req);
-		read_entry->x_entry_id = tx_entry->tx_id;
+		read_entry->x_entry = tx_entry;
 		read_entry->addr = tx_entry->addr;
 
 		read_entry->iov_count = tx_entry->iov_count;
@@ -120,7 +120,7 @@ struct rxr_read_entry *rxr_read_alloc_entry(struct rxr_ep *ep, int entry_type, v
 		assert(rx_entry->op == ofi_op_write || rx_entry->op == ofi_op_msg ||
 		       rx_entry->op == ofi_op_tagged);
 
-		read_entry->x_entry_id = rx_entry->rx_id;
+		read_entry->x_entry = rx_entry;
 		read_entry->addr = rx_entry->addr;
 
 		read_entry->iov_count = rx_entry->iov_count;
@@ -415,11 +415,11 @@ int rxr_read_handle_error(struct rxr_ep *ep, struct rxr_read_entry *read_entry, 
 	struct rxr_rx_entry *rx_entry;
 
 	if (read_entry->x_entry_type == RXR_TX_ENTRY) {
-		tx_entry = ofi_bufpool_get_ibuf(ep->tx_entry_pool, read_entry->x_entry_id);
+		tx_entry = read_entry->x_entry;
 		ret = rxr_cq_handle_tx_error(ep, tx_entry, ret);
 	} else {
 		assert(read_entry->x_entry_type == RXR_RX_ENTRY);
-		rx_entry = ofi_bufpool_get_ibuf(ep->rx_entry_pool, read_entry->x_entry_id);
+		rx_entry = read_entry->x_entry;
 		ret = rxr_cq_handle_rx_error(ep, rx_entry, ret);
 	}
 

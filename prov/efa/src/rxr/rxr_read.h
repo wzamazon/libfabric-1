@@ -53,7 +53,8 @@ struct rxr_read_entry {
 	enum rxr_lower_ep_type lower_ep_type;
 
 	enum rxr_x_entry_type x_entry_type;
-	int x_entry_id;
+	void *x_entry;
+
 	enum rxr_read_entry_state state;
 
 	fi_addr_t addr;
