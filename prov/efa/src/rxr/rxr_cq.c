@@ -753,9 +753,10 @@ void rxr_cq_write_tx_completion(struct rxr_ep *ep,
 
 	if (tx_entry->cuda1m_bgntim != 0 ) {
 		ep->cuda1m_nsend += 1;
-		if (ep->cuda1m_nsend >= ep->cuda1m_recordbgn) {
+		if (ep->cuda1m_nsend > ep->cuda1m_recordbgn) {
 			ep->cuda1m_endtim = ofi_gettime_us();
-			ep->cuda1m_totaltime += ep->cuda1m_endtim - tx_entry->cuda1m_bgntim;
+			ep->cuda1m_send_bgntim[ep->cuda1m_nsend - 1 - ep->cuda1m_recordbgn] = tx_entry->cuda1m_bgntim;
+			ep->cuda1m_send_endtim[ep->cuda1m_nsend - 1 - ep->cuda1m_recordbgn] = ep->cuda1m_endtim;
 		}
 	}
 

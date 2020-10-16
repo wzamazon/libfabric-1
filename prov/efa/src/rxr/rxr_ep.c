@@ -761,9 +761,9 @@ static int rxr_ep_close(struct fid *fid)
 
 	if (rxr_ep->cuda1m_addr != FI_ADDR_NOTAVAIL) {
 		size_t nrecord = (rxr_ep->cuda1m_nsend - rxr_ep->cuda1m_recordbgn);
-		double avg_send_lat = rxr_ep->cuda1m_totaltime * 1e-6 /nrecord;
 		double aggregated_send_time = (rxr_ep->cuda1m_endtim - rxr_ep->cuda1m_bgntim) * 1e-6;
 		double avg_bw = nrecord / aggregated_send_time;
+		int i;
 #if 0
 		char self_addr_buf[256];
 		char peer_addr_buf[256];
@@ -777,9 +777,13 @@ static int rxr_ep_close(struct fid *fid)
 			rxr_ep->cuda1m_nsend,
 			avgtim);
 #endif
-		fprintf(stderr, "cuda 1m send, nsend: %ld nrecord: %ld avg_send_lat: %f aggregated_send_time: %f bw: %f\n",
-			rxr_ep->cuda1m_nsend, nrecord, avg_send_lat, aggregated_send_time, avg_bw);
-
+		fprintf(stderr, "cuda 1m send, nsend: %ld nrecord: %ld aggregated_send_time: %f bw: %f\n",
+			rxr_ep->cuda1m_nsend, nrecord, aggregated_send_time, avg_bw);
+		for (i = 0; i < nrecord; ++i) {
+			fprintf(stderr, "cuda 1m send %d bgntim %f elapsed: %f\n",
+				i, rxr_ep->cuda1m_send_bgntim[i] * 1e-6,
+				(rxr_ep->cuda1m_send_endtim[i] - rxr_ep->cuda1m_send_bgntim[i]) * 1e-6);
+		}
 	}
 
 	ret = fi_close(&rxr_ep->rdm_ep->fid);

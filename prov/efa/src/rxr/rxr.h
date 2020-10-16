@@ -638,7 +638,8 @@ struct rxr_ep {
 	size_t cuda1m_bgntim;
 	size_t cuda1m_endtim;
 	size_t cuda1m_recordbgn;
-	size_t cuda1m_totaltime;
+	size_t cuda1m_send_bgntim[1024];
+	size_t cuda1m_send_endtim[1024];
 
 
 #if ENABLE_DEBUG

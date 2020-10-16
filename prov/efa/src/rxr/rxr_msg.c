@@ -115,7 +115,6 @@ ssize_t rxr_msg_post_cuda_rtm(struct rxr_ep *rxr_ep, struct rxr_tx_entry *tx_ent
 		if (rxr_ep->cuda1m_addr == FI_ADDR_NOTAVAIL) {
 			rxr_ep->cuda1m_addr = tx_entry->addr;
 			rxr_ep->cuda1m_nsend = 0;
-			rxr_ep->cuda1m_totaltime = 0;
 			rxr_ep->cuda1m_recordbgn = 7200;
 		} 
 
