@@ -136,10 +136,10 @@ struct test_size_param test_size[] = {
 	{ 1 << 17, 0 }, { (1 << 17) + (1 << 16), 0 },
 	{ 1 << 18, 0 }, { (1 << 18) + (1 << 17), 0 },
 	{ 1 << 19, 0 }, { (1 << 19) + (1 << 18), 0 },
-	{ 1 << 20, FT_DEFAULT_SIZE }, { (1 << 20) + (1 << 19), 0 },
-	{ 1 << 21, 0 }, { (1 << 21) + (1 << 20), 0 },
+	{ 1 << 20, FT_DEFAULT_SIZE }, /*{ (1 << 20) + (1 << 19), 0 },
+	{ 1 << 21, 0 },  { (1 << 21) + (1 << 20), 0 },
 	{ 1 << 22, 0 }, { (1 << 22) + (1 << 21), 0 },
-	{ 1 << 23, 0 },
+	{ 1 << 23, 0 }, */
 };
 
 const unsigned int test_cnt = (sizeof test_size / sizeof test_size[0]);
@@ -2842,6 +2842,8 @@ void ft_csusage(char *name, char *desc)
 	FT_PRINT_OPTS_USAGE("-S <size>", "specific transfer size or 'all'");
 	FT_PRINT_OPTS_USAGE("-l", "align transmit and receive buffers to page size");
 	FT_PRINT_OPTS_USAGE("-m", "machine readable output");
+	FT_PRINT_OPTS_USAGE("-D <device_iface>", "Specify device interface: eg cuda, ze(default: None). "
+			     "Automatically enables FI_HMEM (-H)");
 	FT_PRINT_OPTS_USAGE("-t <type>", "completion type [queue, counter]");
 	FT_PRINT_OPTS_USAGE("-c <method>", "completion method [spin, sread, fd, yield]");
 	FT_PRINT_OPTS_USAGE("-h", "display this help output");
@@ -2898,6 +2900,8 @@ void ft_parseinfo(int op, char *optarg, struct fi_info *hints,
 	case 'D':
 		if (!strncasecmp("ze", optarg, 2))
 			opts->iface = FI_HMEM_ZE;
+		else if (!strncasecmp("cuda", optarg, 4))
+			opts->iface = FI_HMEM_CUDA;
 		else
 			printf("Unsupported interface\n");
 		opts->options |= FT_OPT_ENABLE_HMEM | FT_OPT_USE_DEVICE;
