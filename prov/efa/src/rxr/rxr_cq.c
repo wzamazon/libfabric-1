@@ -751,6 +751,14 @@ void rxr_cq_write_tx_completion(struct rxr_ep *ep,
 	struct util_cq *tx_cq = ep->util_ep.tx_cq;
 	int ret;
 
+	if (tx_entry->cuda1m_bgntim != 0 ) {
+		ep->cuda1m_nsend += 1;
+		if (ep->cuda1m_nsend >= ep->cuda1m_recordbgn) {
+			ep->cuda1m_endtim = ofi_gettime_us();
+			ep->cuda1m_totaltime += ep->cuda1m_endtim - tx_entry->cuda1m_bgntim;
+		}
+	}
+
 	if (rxr_cq_need_tx_completion(ep, tx_entry)) {
 		FI_DBG(&rxr_prov, FI_LOG_CQ,
 		       "Writing send completion for tx_entry to peer: %" PRIu64

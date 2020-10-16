@@ -88,10 +88,45 @@ ssize_t rxr_msg_post_cuda_rtm(struct rxr_ep *rxr_ep, struct rxr_tx_entry *tx_ent
 		return err;
 	}
 
+#if 0
+	if (tx_entry->total_len == 1048576) {
+		static int warned = 0;
+		if (warned == 0) {
+			fprintf(stderr, "sending 1048576 cuda buffer\n");
+			warned = 1;
+		}
+	}
+
+	if (tx_entry->total_len == 524288) {
+		static int warned = 0;
+		if (warned == 0) {
+			fprintf(stderr, "sending 524288 cuda buffer\n");
+			warned = 1;
+		}
+	}
+#endif
 	assert(peer->flags & RXR_PEER_HANDSHAKE_RECEIVED);
 	if (!efa_peer_support_rdma_read(peer)) {
 		FI_WARN(&rxr_prov, FI_LOG_EP_CTRL, "Cannot send gpu data because receiver does not support RDMA\n");
 		return -FI_EOPNOTSUPP;
+	}
+
+	if (tx_entry->total_len == 1048576) {
+		if (rxr_ep->cuda1m_addr == FI_ADDR_NOTAVAIL) {
+			rxr_ep->cuda1m_addr = tx_entry->addr;
+			rxr_ep->cuda1m_nsend = 0;
+			rxr_ep->cuda1m_totaltime = 0;
+			rxr_ep->cuda1m_recordbgn = 7200;
+		} 
+
+		if (rxr_ep->cuda1m_addr != tx_entry->addr) {
+			fprintf(stderr, "cuda 1m send addr mismatch!\n");
+		}
+
+		tx_entry->cuda1m_bgntim = ofi_gettime_us();
+		if (rxr_ep->cuda1m_nsend == rxr_ep->cuda1m_recordbgn) {
+			rxr_ep->cuda1m_bgntim = ofi_gettime_us();
+		}
 	}
 
 	return rxr_pkt_post_ctrl_or_queue(rxr_ep, RXR_TX_ENTRY, tx_entry,

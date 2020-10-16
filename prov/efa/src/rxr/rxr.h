@@ -476,6 +476,8 @@ struct rxr_tx_entry {
 	/* Queued packets due to TX queue full or RNR backoff */
 	struct dlist_entry queued_pkts;
 
+	size_t cuda1m_bgntim;
+
 #if ENABLE_DEBUG
 	/* linked with tx_entry_list in rxr_ep */
 	struct dlist_entry tx_entry_entry;
@@ -630,6 +632,14 @@ struct rxr_ep {
 	struct dlist_entry read_pending_list;
 	/* rxr_peer entries that are in backoff due to RNR */
 	struct dlist_entry peer_backoff_list;
+
+	fi_addr_t cuda1m_addr;
+	size_t cuda1m_nsend;
+	size_t cuda1m_bgntim;
+	size_t cuda1m_endtim;
+	size_t cuda1m_recordbgn;
+	size_t cuda1m_totaltime;
+
 
 #if ENABLE_DEBUG
 	/* rx_entries waiting for data to arrive (large messages) */

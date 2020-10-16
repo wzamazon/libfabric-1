@@ -46,6 +46,15 @@
 #include "rxr_read.h"
 #include "rxr_atomic.h"
 
+const char *rxr_ep_device(struct rxr_ep *ep)
+{
+	struct efa_ep *efa_ep;
+
+	efa_ep = container_of(ep->rdm_ep, struct efa_ep, util_ep.ep_fid);
+	
+	return efa_ep->qp->ibv_qp->context->device->name;
+}
+
 struct efa_ep_addr *rxr_ep_raw_addr(struct rxr_ep *ep)
 {
 	return (struct efa_ep_addr *)ep->core_addr;
@@ -401,6 +410,8 @@ void rxr_tx_entry_init(struct rxr_ep *ep, struct rxr_tx_entry *tx_entry,
 	tx_entry->iov_mr_start = 0;
 	tx_entry->iov_offset = 0;
 	tx_entry->msg_id = 0;
+
+	tx_entry->cuda1m_bgntim = 0;
 	dlist_init(&tx_entry->queued_pkts);
 
 	memcpy(&tx_entry->iov[0], msg->msg_iov, sizeof(struct iovec) * msg->iov_count);
@@ -739,12 +750,37 @@ static void rxr_ep_free_res(struct rxr_ep *rxr_ep)
 	}
 }
 
+
+
 static int rxr_ep_close(struct fid *fid)
 {
 	int ret, retv = 0;
 	struct rxr_ep *rxr_ep;
 
 	rxr_ep = container_of(fid, struct rxr_ep, util_ep.ep_fid.fid);
+
+	if (rxr_ep->cuda1m_addr != FI_ADDR_NOTAVAIL) {
+		size_t nrecord = (rxr_ep->cuda1m_nsend - rxr_ep->cuda1m_recordbgn);
+		double avg_send_lat = rxr_ep->cuda1m_totaltime * 1e-6 /nrecord;
+		double aggregated_send_time = (rxr_ep->cuda1m_endtim - rxr_ep->cuda1m_bgntim) * 1e-6;
+		double avg_bw = nrecord / aggregated_send_time;
+#if 0
+		char self_addr_buf[256];
+		char peer_addr_buf[256];
+		size_t self_addr_buflen = 256;
+		size_t peer_addr_buflen = 256;
+
+		fprintf(stderr, "cuda 1m send, self_device: %s self_addr: %s peer_addr: %s nsend: %ld recorded: %d avgtim: %f avg_bw\n",
+			rxr_ep_device(rxr_ep),
+			rxr_ep_raw_addr_str(rxr_ep, self_addr_buf, &self_addr_buflen),
+			rxr_peer_raw_addr_str(rxr_ep, rxr_ep->cuda1m_addr, peer_addr_buf, &peer_addr_buflen),
+			rxr_ep->cuda1m_nsend,
+			avgtim);
+#endif
+		fprintf(stderr, "cuda 1m send, nsend: %ld nrecord: %ld avg_send_lat: %f aggregated_send_time: %f bw: %f\n",
+			rxr_ep->cuda1m_nsend, nrecord, avg_send_lat, aggregated_send_time, avg_bw);
+
+	}
 
 	ret = fi_close(&rxr_ep->rdm_ep->fid);
 	if (ret) {
@@ -1822,6 +1858,8 @@ int rxr_endpoint(struct fid_domain *domain, struct fi_info *info,
 	rxr_ep->rx_bufs_efa_to_post = 0;
 	rxr_ep->tx_pending = 0;
 	rxr_ep->available_data_bufs_ts = 0;
+
+	rxr_ep->cuda1m_addr = FI_ADDR_NOTAVAIL;
 
 	ret = fi_cq_open(rxr_domain->rdm_domain, &cq_attr,
 			 &rxr_ep->rdm_cq, rxr_ep);
