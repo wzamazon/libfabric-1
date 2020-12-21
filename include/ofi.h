@@ -266,8 +266,10 @@ static inline void *ofi_get_page_end(const void *addr, size_t page_size)
 static inline size_t
 ofi_get_page_bytes(const void *addr, size_t len, size_t page_size)
 {
-	return (char *)ofi_get_page_end((const char *) addr + len, page_size) -
-	       (char *)ofi_get_page_start(addr, page_size);
+	char *start = ofi_get_page_start(addr, page_size);
+	char *end = (char *)ofi_get_page_start((const char*)addr + len - 1, page_size)
+		    + page_size;
+	return end - start;
 }
 
 #define FI_TAG_GENERIC	0xAAAAAAAAAAAAAAAAULL
