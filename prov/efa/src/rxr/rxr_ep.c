@@ -1040,6 +1040,7 @@ out:
 		break;
 	}
 
+	fprintf(stderr, "master\n");
 	return ret;
 }
 
