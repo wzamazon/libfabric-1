@@ -339,6 +339,8 @@ extern struct fi_ops_cm efa_ep_cm_ops;
 extern struct fi_ops_msg efa_ep_msg_ops;
 extern struct fi_ops_rma efa_ep_rma_ops;
 
+int efa_ep_enable(struct fid_ep *ep_fid, int for_btl_ofi);
+
 ssize_t efa_rma_post_read(struct efa_ep *ep, const struct fi_msg_rma *msg,
 			  uint64_t flags, bool self_comm);
 

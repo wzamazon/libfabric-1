@@ -53,9 +53,15 @@ static int efa_ep_getname(fid_t ep_fid, void *addr, size_t *addrlen)
 	ep = container_of(ep_fid, struct efa_ep, util_ep.ep_fid);
 
 	ep_addr = (struct efa_ep_addr *)ep->src_addr;
-	ep_addr->qpn = ep->qp->qp_num;
-	ep_addr->pad = 0;
-	ep_addr->qkey = ep->qp->qkey;
+	if (ep->qp) {
+		ep_addr->qpn = ep->qp->qp_num;
+		ep_addr->pad = 0;
+		ep_addr->qkey = ep->qp->qkey;
+	} else {
+		ep_addr->qpn = 2;
+		ep_addr->pad = 0;
+		ep_addr->qkey = 1234;
+	}
 
 	inet_ntop(AF_INET6, ep_addr->raw, str, INET6_ADDRSTRLEN);
 

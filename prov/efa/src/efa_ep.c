@@ -131,7 +131,8 @@ static int efa_ep_modify_qp_rst2rts(struct efa_ep *ep, struct efa_qp *qp)
 
 static int efa_ep_create_qp_ex(struct efa_ep *ep,
 			       struct ibv_pd *ibv_pd,
-			       struct ibv_qp_init_attr_ex *init_attr_ex)
+			       struct ibv_qp_init_attr_ex *init_attr_ex,
+			       int for_btl_ofi)
 {
 	struct efa_domain *domain;
 	struct efa_qp *qp;
@@ -143,6 +144,11 @@ static int efa_ep_create_qp_ex(struct efa_ep *ep,
 	if (!qp)
 		return -FI_ENOMEM;
 
+	if (for_btl_ofi) {
+		fprintf(stderr, "for btl ofi, in efa_ep_create_qp_ex(), return before efadv_create_qp_ex\n");
+		return 0;
+	}
+
 	if (init_attr_ex->qp_type == IBV_QPT_UD) {
 		qp->ibv_qp = ibv_create_qp_ex(ibv_pd->context, init_attr_ex);
 	} else {
@@ -150,6 +156,11 @@ static int efa_ep_create_qp_ex(struct efa_ep *ep,
 		efa_attr.driver_qp_type = EFADV_QP_DRIVER_TYPE_SRD;
 		qp->ibv_qp = efadv_create_qp_ex(ibv_pd->context, init_attr_ex, &efa_attr,
 						sizeof(struct efadv_qp_init_attr));
+	}
+
+	if (for_btl_ofi) {
+		fprintf(stderr, "for btl ofi, in efa_ep_create_qp_ex(), return after efadv_create_qp_ex\n");
+		return 0;
 	}
 
 	if (!qp->ibv_qp) {
@@ -405,7 +416,7 @@ int efa_ep_create_self_ah(struct efa_ep *ep, struct ibv_pd *ibv_pd)
 	return ep->self_ah ? 0 : -FI_EINVAL;
 }
 
-static int efa_ep_enable(struct fid_ep *ep_fid)
+int efa_ep_enable(struct fid_ep *ep_fid, int for_btl_ofi)
 {
 	struct ibv_qp_init_attr_ex attr_ex = { 0 };
 	const struct fi_info *efa_info;
@@ -413,6 +424,7 @@ static int efa_ep_enable(struct fid_ep *ep_fid)
 	struct efa_ep *ep;
 	int err;
 	ep = container_of(ep_fid, struct efa_ep, util_ep.ep_fid);
+
 
 	if (!ep->scq && !ep->rcq) {
 		EFA_WARN(FI_LOG_EP_CTRL,
@@ -474,9 +486,14 @@ static int efa_ep_enable(struct fid_ep *ep_fid)
 	attr_ex.qp_context = ep;
 	attr_ex.sq_sig_all = 1;
 
-	err = efa_ep_create_qp_ex(ep, ibv_pd, &attr_ex);
+	err = efa_ep_create_qp_ex(ep, ibv_pd, &attr_ex, for_btl_ofi);
 	if (err)
 		return err;
+
+	if (for_btl_ofi) {
+		fprintf(stderr, "for btl_ofi, return after efa_ep_create_qp_ex\n");
+		return 0;
+	}
 
 	err = efa_ep_create_self_ah(ep, ibv_pd);
 	if (err) {
@@ -501,7 +518,7 @@ static int efa_ep_control(struct fid *fid, int command, void *arg)
 		case FI_SETOPSFLAG:
 			return efa_ep_setflags(ep_fid, *(uint64_t *)arg);
 		case FI_ENABLE:
-			return efa_ep_enable(ep_fid);
+			return efa_ep_enable(ep_fid, 0);
 		default:
 			return -FI_ENOSYS;
 		}

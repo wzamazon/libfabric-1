@@ -961,11 +961,15 @@ static int rxr_ep_ctrl(struct fid *fid, int command, void *arg)
 	uint64_t flags = FI_MORE;
 	size_t rx_size, shm_rx_size;
 	char shm_ep_name[NAME_MAX];
+	bool delivery_complete_requested;
 
 	switch (command) {
 	case FI_ENABLE:
 		/* Enable core endpoints & post recv buff */
 		ep = container_of(fid, struct rxr_ep, util_ep.ep_fid.fid);
+
+		delivery_complete_requested = (ep->util_ep.tx_op_flags & FI_DELIVERY_COMPLETE);
+		fprintf(stderr, "ep: %p dc_requested: %d\n", ep, delivery_complete_requested);
 
 		/*
 		 * If the endpoint is configured for zero-copy receives, the
@@ -975,9 +979,14 @@ static int rxr_ep_ctrl(struct fid *fid, int command, void *arg)
 		 * RNRs.
 		 */
 		rx_size = ep->use_zcpy_rx ? rxr_env.zcpy_rx_seed : rxr_get_rx_pool_chunk_cnt(ep);
-		ret = fi_enable(ep->rdm_ep);
+		ret = efa_ep_enable(ep->rdm_ep, delivery_complete_requested);
 		if (ret)
 			return ret;
+
+		if (delivery_complete_requested) {
+			fprintf(stderr, "for btl/ofi, return after enable rdm_ep\n");
+			goto out;
+		}
 
 		fastlock_acquire(&ep->util_ep.lock);
 
@@ -1014,7 +1023,7 @@ static int rxr_ep_ctrl(struct fid *fid, int command, void *arg)
 			ret = rxr_ep_efa_addr_to_str(ep->core_addr, shm_ep_name);
 			if (ret < 0)
 				goto out;
-
+			fprintf(stderr, "shm_ep_name: %s\n", shm_ep_name);
 			fi_setname(&ep->shm_ep->fid, shm_ep_name, sizeof(shm_ep_name));
 			shm_rx_size = shm_info->rx_attr->size;
 			ret = fi_enable(ep->shm_ep);
