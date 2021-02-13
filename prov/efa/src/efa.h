@@ -154,6 +154,10 @@ struct efa_domain {
 	struct ofi_mr_cache	*cache;
 	struct efa_qp		**qp_table;
 	size_t			qp_table_sz_m1;
+	size_t			reg_mr_cnt;
+	double			reg_mr_time;
+	size_t			dereg_mr_cnt;
+	double			dereg_mr_time;
 };
 
 extern struct fi_ops_mr efa_domain_mr_ops;

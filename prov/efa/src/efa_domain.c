@@ -49,8 +49,22 @@ static int efa_domain_close(fid_t fid)
 	domain = container_of(fid, struct efa_domain,
 			      util_domain.domain_fid.fid);
 
+
 	if (efa_is_cache_available(domain)) {
 		ofi_mr_cache_cleanup(domain->cache);
+
+		FILE *fp;
+		char filnam[160];
+		char hostname[160];
+		gethostname(hostname, 160);
+		sprintf(filnam, "%s_%d.mrstat", hostname, getpid());
+		fp = fopen(filnam, "w");
+		fprintf(fp, "reg_mr_cnt: %ld\n", domain->reg_mr_cnt);
+		fprintf(fp, "reg_mr_time: %f\n", domain->reg_mr_time);
+		fprintf(fp, "dereg_mr_cnt: %ld\n", domain->dereg_mr_cnt);
+		fprintf(fp, "dereg_mr_time: %f\n", domain->dereg_mr_time);
+		fclose(fp);
+
 		free(domain->cache);
 		domain->cache = NULL;
 	}

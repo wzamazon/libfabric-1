@@ -234,7 +234,11 @@ static int efa_mr_dereg_impl(struct efa_mr *efa_mr)
 	int err;
 
 	efa_domain = efa_mr->domain;
+	double dereg_mr_bgntim = ofi_gettime_us() * 1e-6;
 	err = -ibv_dereg_mr(efa_mr->ibv_mr);
+	double dereg_mr_endtim = ofi_gettime_us() * 1e-6;
+	efa_domain->dereg_mr_cnt += 1;
+	efa_domain->dereg_mr_time += (dereg_mr_endtim - dereg_mr_bgntim);
 	if (err) {
 		EFA_WARN(FI_LOG_MR,
 			"Unable to deregister memory registration\n");
@@ -307,9 +311,13 @@ static int efa_mr_reg_impl(struct efa_mr *efa_mr, uint64_t flags, void *attr)
 	if (efa_mr->domain->ctx->device_caps & EFADV_DEVICE_ATTR_CAPS_RDMA_READ)
 		fi_ibv_access |= IBV_ACCESS_REMOTE_READ;
 
+	double mr_bgntim = ofi_gettime_us() * 1e-6;
 	efa_mr->ibv_mr = ibv_reg_mr(efa_mr->domain->ibv_pd, 
 				    (void *)mr_attr->mr_iov->iov_base,
 				    mr_attr->mr_iov->iov_len, fi_ibv_access);
+	double mr_endtim = ofi_gettime_us() * 1e-6;
+	efa_mr->domain->reg_mr_cnt += 1;
+	efa_mr->domain->reg_mr_time += (mr_endtim - mr_bgntim);
 	if (!efa_mr->ibv_mr) {
 		EFA_WARN(FI_LOG_MR, "Unable to register MR: %s\n",
 				fi_strerror(-errno));

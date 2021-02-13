@@ -1016,7 +1016,7 @@ out:
 		break;
 	}
 
-	fprintf(stderr, "ofiwg master f0547bafd0699 + no huge pages\n");
+	fprintf(stderr, "ofiwg master f0547bafd0699 + no huge pages + print mr stat\n");
 	return ret;
 }
 
