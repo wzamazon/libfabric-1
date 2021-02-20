@@ -1016,7 +1016,7 @@ out:
 		break;
 	}
 
-	fprintf(stderr, "ofiwg master f0547bafd0699\n");
+	fprintf(stderr, "ofiwg master f0547bafd0699 + no huge pages\n");
 	return ret;
 }
 
@@ -1222,13 +1222,13 @@ int rxr_ep_init(struct rxr_ep *ep)
 #endif
 
 	ret = rxr_create_pkt_pool(ep, entry_sz, rxr_get_tx_pool_chunk_cnt(ep),
-				  OFI_BUFPOOL_HUGEPAGES,
+				  0,
 				  &ep->tx_pkt_efa_pool);
 	if (ret)
 		goto err_free;
 
 	ret = rxr_create_pkt_pool(ep, entry_sz, rxr_get_rx_pool_chunk_cnt(ep),
-				  OFI_BUFPOOL_HUGEPAGES,
+				  0,
 				  &ep->rx_pkt_efa_pool);
 	if (ret)
 		goto err_free;
