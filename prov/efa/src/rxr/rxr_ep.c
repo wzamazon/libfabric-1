@@ -1016,7 +1016,7 @@ out:
 		break;
 	}
 
-	fprintf(stderr, "ofiwg master f0547bafd0699 + defer_cnt 3 patches\n");
+	fprintf(stderr, "ofiwg master + use defer_cnt to clear deferred list\n");
 	return ret;
 }
 
