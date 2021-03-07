@@ -452,6 +452,17 @@ void rxr_cq_write_rx_completion(struct rxr_ep *ep,
 {
 	struct util_cq *rx_cq = ep->util_ep.rx_cq;
 	int ret = 0;
+#if 0
+	{
+		char peer_raw_addr_str[256];
+		size_t peer_raw_addr_strlen = 256;
+
+		fprintf(stderr, "recv addr: %s buffer: %p len: %ld msg_id: %d completed\n",
+			rxr_peer_raw_addr_str(ep, rx_entry->addr, peer_raw_addr_str, &peer_raw_addr_strlen),
+			rx_entry->iov[0].iov_base, rx_entry->iov[0].iov_len, rx_entry->msg_id);
+	}
+#endif
+
 	if (OFI_UNLIKELY(rx_entry->cq_entry.len < rx_entry->total_len)) {
 		FI_WARN(&rxr_prov, FI_LOG_CQ,
 			"Message truncated: tag: %"PRIu64" len: %"PRIu64" total_len: %zu\n",
@@ -757,6 +768,17 @@ void rxr_cq_write_tx_completion(struct rxr_ep *ep,
 {
 	struct util_cq *tx_cq = ep->util_ep.tx_cq;
 	int ret;
+
+#if 0
+	{
+		char peer_raw_addr_str[256];
+		size_t peer_raw_addr_strlen = 256;
+
+		fprintf(stderr, "send addr: %s buffer: %p len: %ld msg_id: %d completed\n",
+			rxr_peer_raw_addr_str(ep, tx_entry->addr, peer_raw_addr_str, &peer_raw_addr_strlen),
+			tx_entry->iov[0].iov_base, tx_entry->iov[0].iov_len, tx_entry->msg_id);
+	}
+#endif
 
 	if (rxr_cq_need_tx_completion(ep, tx_entry)) {
 		FI_DBG(&rxr_prov, FI_LOG_CQ,
