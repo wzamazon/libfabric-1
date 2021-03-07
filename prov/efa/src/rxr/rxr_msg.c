@@ -237,9 +237,10 @@ ssize_t rxr_msg_post_rtm(struct rxr_ep *rxr_ep, struct rxr_tx_entry *tx_entry)
 	    efa_both_support_rdma_read(rxr_ep, peer) &&
 	    (tx_entry->desc[0] || efa_is_cache_available(efa_domain))) {
 		/* Read message support FI_DELIVERY_COMPLETE implicitly. */
+		//fprintf(stderr, "post read rtm ....\n");
 		err = rxr_pkt_post_ctrl(rxr_ep, RXR_TX_ENTRY, tx_entry,
 					RXR_READ_MSGRTM_PKT + tagged, 0);
-
+		//fprintf(stderr, "post read rtm done! err=%ld\n", err);
 		if (err != -FI_ENOMEM)
 			return err;
 
@@ -271,7 +272,6 @@ ssize_t rxr_msg_generic_send(struct fid_ep *ep, const struct fi_msg *msg,
 	       "iov_len: %lu tag: %lx op: %x flags: %lx\n",
 	       ofi_total_iov_len(msg->msg_iov, msg->iov_count),
 	       tag, op, flags);
-
 	rxr_ep = container_of(ep, struct rxr_ep, util_ep.ep_fid.fid);
 	assert(msg->iov_count <= rxr_ep->tx_iov_limit);
 
@@ -302,10 +302,30 @@ ssize_t rxr_msg_generic_send(struct fid_ep *ep, const struct fi_msg *msg,
 
 	tx_entry->msg_id = peer->next_msg_id++;
 	err = rxr_msg_post_rtm(rxr_ep, tx_entry);
+
+	char peer_addr_str[256];
+	size_t peer_addr_strlen = 256;
+	rxr_peer_raw_addr_str(rxr_ep, tx_entry->addr, peer_addr_str, &peer_addr_strlen);
+
 	if (OFI_UNLIKELY(err)) {
+#if 0
+		static int counter = 0;
+		counter += 1;
+		if (counter % 1000 == 0)
+			fprintf(stderr, "send failed! addr: %s err=%ld\n",peer_addr_str, err);
+#endif
 		rxr_release_tx_entry(rxr_ep, tx_entry);
 		peer->next_msg_id--;
+	} else {
+#if 0
+		fprintf(stderr, "send submitted! addr: %s buffer: %p len: %ld msg_id: %d tag: %lx\n",
+			peer_addr_str,
+			tx_entry->iov[0].iov_base, tx_entry->iov[0].iov_len,
+			tx_entry->msg_id, tx_entry->tag);
+#endif
 	}
+
+
 
 out:
 	fastlock_release(&rxr_ep->util_ep.lock);
@@ -833,6 +853,15 @@ ssize_t rxr_msg_generic_recv(struct fid_ep *ep, const struct fi_msg *msg,
 
 	rxr_ep = container_of(ep, struct rxr_ep, util_ep.ep_fid.fid);
 
+#if 0
+	{
+		char peer_addr_str[256];
+		size_t peer_addr_strlen = 256;
+		fprintf(stderr, "recv addr: %s buffer: %p len: %ld tag: %lx\n",
+			rxr_peer_raw_addr_str(rxr_ep, msg->addr, peer_addr_str, &peer_addr_strlen),
+			msg->msg_iov[0].iov_base, msg->msg_iov[0].iov_len, tag);
+	}
+#endif
 	assert(msg->iov_count <= rxr_ep->rx_iov_limit);
 
 	rxr_perfset_start(rxr_ep, perf_rxr_recv);
