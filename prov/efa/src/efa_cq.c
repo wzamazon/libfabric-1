@@ -155,6 +155,7 @@ ssize_t efa_cq_readfrom(struct fid_cq *cq_fid, void *buf, size_t count,
 
 		/* Insert error entry into wcq */
 		if (wc.ibv_wc.status) {
+			fprintf(stderr, "ibv_poll_cq error! err:%d\n", wc.ibv_wc.vendor_err);
 			wce = ofi_buf_alloc(cq->wce_pool);
 			if (!wce) {
 				fastlock_release(&cq->lock);
