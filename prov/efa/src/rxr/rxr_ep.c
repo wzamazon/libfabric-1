@@ -71,6 +71,9 @@ struct efa_ep_addr *rxr_peer_raw_addr(struct rxr_ep *ep, fi_addr_t addr)
 
 const char *rxr_peer_raw_addr_str(struct rxr_ep *ep, fi_addr_t addr, char *buf, size_t *buflen)
 {
+	if (addr == FI_ADDR_NOTAVAIL)
+		return "UNSPECIFIED";
+
 	return ofi_straddr(buf, buflen, FI_ADDR_EFA, rxr_peer_raw_addr(ep, addr));
 }
 
@@ -1016,7 +1019,13 @@ out:
 		break;
 	}
 
-	fprintf(stderr, "master 3d4d28f1\n");
+	char raw_addr_str[256];
+	size_t raw_addr_strlen = 256;
+
+	fprintf(stderr, "master 2ff2e466 raw_addr: %s pid: %d\n",
+		rxr_ep_raw_addr_str(ep, raw_addr_str, &raw_addr_strlen),
+		getpid());
+
 	return ret;
 }
 
