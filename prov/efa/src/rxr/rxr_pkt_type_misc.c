@@ -77,8 +77,10 @@ void rxr_pkt_post_handshake(struct rxr_ep *ep,
 	assert(!(peer->flags & RXR_PEER_HANDSHAKE_SENT));
 
 	pkt_entry = rxr_pkt_entry_alloc(ep, ep->tx_pkt_efa_pool);
-	if (OFI_UNLIKELY(!pkt_entry))
+	if (OFI_UNLIKELY(!pkt_entry)) {
+		fprintf(stderr, "cannot allocate pkt_entry for handshake\n");
 		return;
+	}
 
 	rxr_pkt_init_handshake(ep, pkt_entry, addr);
 
