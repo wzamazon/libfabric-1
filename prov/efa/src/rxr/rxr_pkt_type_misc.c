@@ -95,12 +95,20 @@ void rxr_pkt_post_handshake(struct rxr_ep *ep,
 	 * next REQ from this peer containing the source information
 	 */
 	if (OFI_UNLIKELY(ret)) {
+		fprintf(stderr, "send hand shake failed!\n");
 		rxr_pkt_entry_release_tx(ep, pkt_entry);
 		if (ret == -FI_EAGAIN)
 			return;
 		FI_WARN(&rxr_prov, FI_LOG_CQ,
 			"Failed to send a HANDSHAKE packet: ret %zd\n", ret);
 		return;
+	} else {
+#if 0
+		char peer_addr_str[256];
+		size_t peer_addr_strlen = 256;
+		fprintf(stderr, "send hand shake succeeded! peer addr: %s\n",
+			rxr_peer_raw_addr_str(ep, addr, peer_addr_str, &peer_addr_strlen));
+#endif
 	}
 
 	peer->flags |= RXR_PEER_HANDSHAKE_SENT;
@@ -387,6 +395,14 @@ void rxr_pkt_handle_rma_read_completion(struct rxr_ep *ep,
 	read_entry = (struct rxr_read_entry *)context_pkt_entry->x_entry;
 	read_entry->bytes_finished += rma_context_pkt->seg_size;
 	assert(read_entry->bytes_finished <= read_entry->total_len);
+	if (read_entry->lower_ep_type == EFA_EP) {
+		char peer_raw_addr[256];
+		size_t peer_raw_addrlen = 256;
+
+		fprintf(stderr, "read completed! addr: %s size: %ld\n",
+			rxr_peer_raw_addr_str(ep, read_entry->addr, peer_raw_addr, &peer_raw_addrlen),
+			read_entry->iov[0].iov_len);
+	}
 
 	if (read_entry->bytes_finished == read_entry->total_len) {
 		if (read_entry->context_type == RXR_READ_CONTEXT_TX_ENTRY) {

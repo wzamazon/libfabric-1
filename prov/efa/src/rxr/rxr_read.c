@@ -561,6 +561,16 @@ int rxr_read_post(struct rxr_ep *ep, struct rxr_read_entry *read_entry)
 			msg.addr = read_entry->addr;
 			self_comm = (read_entry->context_type == RXR_READ_CONTEXT_PKT_ENTRY);
 			ret = efa_rma_post_read(efa_ep, &msg, 0, self_comm);
+			if (ret) {
+				fprintf(stderr, "post read failed!\n");
+			} else {
+				char peer_raw_addr[256];
+				size_t peer_raw_addrlen = 256;
+
+				fprintf(stderr, "read submitted! addr: %s len: %ld\n",
+					rxr_peer_raw_addr_str(ep, msg.addr, peer_raw_addr, &peer_raw_addrlen),
+					read_entry->iov[0].iov_len);
+			}
 		}
 
 		if (OFI_UNLIKELY(ret)) {
