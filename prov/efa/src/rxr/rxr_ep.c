@@ -826,6 +826,8 @@ void rxr_ep_set_features(struct rxr_ep *ep)
 		ep->features[0] |= RXR_REQ_FEATURE_RDMA_READ;
 
 	ep->features[0] |= RXR_REQ_FEATURE_DELIVERY_COMPLETE;
+
+	ep->features[0] |= RXR_REQ_FEATURE_UNDERSTAND_OPT_QKEY_HDR;
 }
 
 static int rxr_ep_ctrl(struct fid *fid, int command, void *arg)

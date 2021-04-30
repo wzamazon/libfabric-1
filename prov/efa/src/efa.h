@@ -489,6 +489,19 @@ bool efa_both_support_rdma_read(struct rxr_ep *ep, struct rdm_peer *peer)
 }
 
 static inline
+bool rxr_peer_understand_opt_qkey_hdr(struct rdm_peer *peer)
+{
+	/* OPT_QKEY_HEADER is an extra feature defined
+	 * in version 4 (the base version).
+	 * Because it is an extra feature,
+	 * an EP will assume the peer does not support
+	 * it before a handshake packet was received.
+	 */
+	return (peer->flags & RXR_PEER_HANDSHAKE_RECEIVED) &&
+	       (peer->features[0] & RXR_REQ_FEATURE_UNDERSTAND_OPT_QKEY_HDR);
+}
+
+static inline
 size_t efa_max_rdma_size(struct fid_ep *ep_fid)
 {
 	struct efa_ep *efa_ep;
