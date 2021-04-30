@@ -126,7 +126,23 @@ void rxr_pkt_init_req_hdr(struct rxr_ep *ep,
 		 * so the remote side can insert it into its address vector.
 		 */
 		base_hdr->flags |= RXR_REQ_OPT_RAW_ADDR_HDR;
+	} else if (rxr_peer_understand_opt_qkey_hdr(peer)) {
+		/*
+		 * After receiving handshake packet, we will know the peer's capability.
+		 *
+		 * As long as the peer can understand optional qkey header, we
+		 * will include it in the req packet header.The peer will use it
+		 * to verify my identity.
+		 *
+		 * This logic means that a req packet cannot have both
+		 * the optional raw address header and the optional qkey header.
+		 *
+		 * TODO: once rdma-core can return qkey in completion, we
+		 * can stop include qkey in req packet header.
+		 */
+		base_hdr->flags |= RXR_REQ_OPT_QKEY_HDR;
 	}
+
 
 	if (tx_entry->fi_flags & FI_REMOTE_CQ_DATA) {
 		base_hdr->flags |= RXR_REQ_OPT_CQ_DATA_HDR;
@@ -150,6 +166,21 @@ void rxr_pkt_init_req_hdr(struct rxr_ep *ep,
 		cq_data_hdr->cq_data = tx_entry->cq_entry.data;
 		opt_hdr += sizeof(*cq_data_hdr);
 	}
+
+	if (base_hdr->flags & RXR_REQ_OPT_QKEY_HDR) {
+		struct rxr_base_opt_qkey_hdr *qkey_hdr;
+		struct efa_ep_addr *self_addr;
+		struct efa_ep_addr *peer_addr;
+
+		self_addr = (struct efa_ep_addr *)ep->core_addr;
+		peer_addr = rxr_peer_raw_addr(ep, tx_entry->addr);
+		assert(peer_addr);
+		qkey_hdr = (struct rxr_base_opt_qkey_hdr *)opt_hdr;
+		qkey_hdr->sender_qkey = self_addr->qkey;
+		qkey_hdr->receiver_qkey = peer_addr->qkey;
+		opt_hdr += sizeof(*qkey_hdr);
+	}
+
 
 	pkt_entry->addr = tx_entry->addr;
 }
@@ -181,6 +212,13 @@ size_t rxr_pkt_req_base_hdr_size(struct rxr_pkt_entry *pkt_entry)
 	return hdr_size;
 }
 
+/**
+ * @brief return the optional raw addr header pointer in a req packet
+ *
+ * @param[in]	pkt_entry	an REQ packet entry
+ * @return	If the input has the optional raw addres header, return the pointer to it.
+ *		Otherwise, return NULL
+ */
 void *rxr_pkt_req_raw_addr(struct rxr_pkt_entry *pkt_entry)
 {
 	char *opt_hdr;
@@ -190,12 +228,48 @@ void *rxr_pkt_req_raw_addr(struct rxr_pkt_entry *pkt_entry)
 	base_hdr = rxr_get_base_hdr(pkt_entry->pkt);
 	opt_hdr = (char *)pkt_entry->pkt + rxr_pkt_req_base_hdr_size(pkt_entry);
 	if (base_hdr->flags & RXR_REQ_OPT_RAW_ADDR_HDR) {
+		/* For req packet, the optional qkey header and the optional
+		 * raw address header are mutually exclusive. So the construction
+		 * of req header for reason.
+		 */
+		assert(!(base_hdr->flags & RXR_REQ_OPT_QKEY_HDR));
 		raw_addr_hdr = (struct rxr_req_opt_raw_addr_hdr *)opt_hdr;
 		return raw_addr_hdr->raw_addr;
 	}
 
 	return NULL;
 }
+
+/**
+ * @brief return the optional qkey header pointer in a req packet
+ *
+ * @param[in]	pkt_entry	an REQ packet entry
+ * @return	If the input has the optional qkey header, return the pointer to qkey header
+ * 		Otherwise, return NULL
+ */
+struct rxr_base_opt_qkey_hdr *rxr_pkt_req_qkey_hdr(struct rxr_pkt_entry *pkt_entry)
+{
+	char *opt_hdr;
+	struct rxr_base_hdr *base_hdr;
+
+	base_hdr = rxr_get_base_hdr(pkt_entry->pkt);
+	opt_hdr = (char *)pkt_entry->pkt + rxr_pkt_req_base_hdr_size(pkt_entry);
+	if (base_hdr->flags & RXR_REQ_OPT_QKEY_HDR) {
+		/* For req packet, the optional qkey header and the optional
+		 * raw address header are mutually exclusive. So the construction
+		 * of req header for reason.
+		 */
+		assert(!(base_hdr->flags & RXR_REQ_OPT_RAW_ADDR_HDR));
+
+		if (base_hdr->flags & RXR_REQ_OPT_CQ_DATA_HDR)
+			opt_hdr += sizeof(struct rxr_req_opt_cq_data_hdr);
+
+		return (struct rxr_base_opt_qkey_hdr *)opt_hdr;
+	}
+
+	return NULL;
+}
+
 
 size_t rxr_pkt_req_hdr_size(struct rxr_pkt_entry *pkt_entry)
 {
@@ -205,13 +279,24 @@ size_t rxr_pkt_req_hdr_size(struct rxr_pkt_entry *pkt_entry)
 
 	base_hdr = rxr_get_base_hdr(pkt_entry->pkt);
 	opt_hdr = (char *)pkt_entry->pkt + rxr_pkt_req_base_hdr_size(pkt_entry);
+
+	/*
+	 * It is not possible to have both optional raw addr header and optional
+	 * qkey header. See comments in rxr_pkt_req_init_hdr for reason
+	 */
 	if (base_hdr->flags & RXR_REQ_OPT_RAW_ADDR_HDR) {
+		assert(!(base_hdr->flags & RXR_REQ_OPT_QKEY_HDR));
 		raw_addr_hdr = (struct rxr_req_opt_raw_addr_hdr *)opt_hdr;
 		opt_hdr += sizeof(struct rxr_req_opt_raw_addr_hdr) + raw_addr_hdr->addr_len;
 	}
 
 	if (base_hdr->flags & RXR_REQ_OPT_CQ_DATA_HDR)
 		opt_hdr += sizeof(struct rxr_req_opt_cq_data_hdr);
+
+	if (base_hdr->flags & RXR_REQ_OPT_QKEY_HDR) {
+		assert(!(base_hdr->flags & RXR_REQ_OPT_RAW_ADDR_HDR));
+		opt_hdr += sizeof(struct rxr_base_opt_qkey_hdr);
+	}
 
 	return opt_hdr - (char *)pkt_entry->pkt;
 }
@@ -237,6 +322,12 @@ int64_t rxr_pkt_req_cq_data(struct rxr_pkt_entry *pkt_entry)
 
 size_t rxr_pkt_req_max_header_size(int pkt_type)
 {
+	/* max_hdr_size does not include opt_qkey_hdr length because
+	 * it is impossible to have both opt_qkey_hdr and opt_raw_addr_hdr
+	 * in the header.
+	 *
+	 * See comments in rxr_pkt_init_req_hdr for reasoning.
+	 */
 	int max_hdr_size = REQ_INF_LIST[pkt_type].base_hdr_size
 		+ sizeof(struct rxr_req_opt_raw_addr_hdr) + RXR_MAX_NAME_LENGTH
 		+ sizeof(struct rxr_req_opt_cq_data_hdr);
