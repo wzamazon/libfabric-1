@@ -865,6 +865,8 @@ void rxr_ep_set_exinfo(struct rxr_ep *ep)
 
 	if (ep->use_zcpy_rx)
 		ep->exinfo[0] |= RXR_EXTRA_FEATURE_ZERO_COPY_RECEIVE;
+
+	ep->exinfo[0] |= RXR_EXTRA_REQUEST_CONNID_HEADER;
 }
 
 static int rxr_ep_ctrl(struct fid *fid, int command, void *arg)
