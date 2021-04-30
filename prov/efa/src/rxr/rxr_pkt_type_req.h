@@ -67,7 +67,7 @@
 #define RXR_REQ_TAGGED			BIT_ULL(3)
 #define RXR_REQ_RMA			BIT_ULL(4)
 #define RXR_REQ_ATOMIC			BIT_ULL(5)
-
+#define RXR_REQ_OPT_CONNID_HDR		BIT_ULL(6)
 /*
  *     Extra Feature/Request Flags
  */
