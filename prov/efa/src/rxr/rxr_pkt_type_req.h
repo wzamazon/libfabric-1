@@ -73,6 +73,7 @@
  */
 #define RXR_REQ_FEATURE_RDMA_READ	BIT_ULL(0)
 #define RXR_REQ_FEATURE_DELIVERY_COMPLETE BIT_ULL(1)
+#define RXR_REQ_FEATURE_UNDERSTAND_OPT_QKEY_HDR BIT_ULL(2)
 
 /*
  *     Utility struct and functions for
