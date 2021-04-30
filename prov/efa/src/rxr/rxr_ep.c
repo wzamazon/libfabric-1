@@ -865,6 +865,8 @@ void rxr_ep_set_features(struct rxr_ep *ep)
 
 	if (ep->use_zcpy_rx)
 		ep->features[0] |= RXR_REQ_FEATURE_ZERO_COPY_RECEIVE;
+
+	ep->features[0] |= RXR_REQ_FEATURE_NEED_CONNID;
 }
 
 static int rxr_ep_ctrl(struct fid *fid, int command, void *arg)
