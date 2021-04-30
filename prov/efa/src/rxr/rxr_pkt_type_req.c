@@ -127,7 +127,20 @@ void rxr_pkt_init_req_hdr(struct rxr_ep *ep,
 		 * so the remote side can insert it into its address vector.
 		 */
 		base_hdr->flags |= RXR_REQ_OPT_RAW_ADDR_HDR;
+	} else if (rxr_peer_need_connid(peer)) {
+		/*
+		 * After receiving handshake packet, we will know the peer's capability.
+		 *
+		 * If the peer need connid, we will include the optional connid
+		 * header in the req packet header.The peer will use it
+		 * to verify my identity.
+		 *
+		 * This logic means that a req packet cannot have both
+		 * the optional raw address header and the optional connid header.
+		 */
+		base_hdr->flags |= RXR_REQ_OPT_CONNID_HDR;
 	}
+
 
 	if (tx_entry->fi_flags & FI_REMOTE_CQ_DATA) {
 		base_hdr->flags |= RXR_REQ_OPT_CQ_DATA_HDR;
@@ -152,6 +165,17 @@ void rxr_pkt_init_req_hdr(struct rxr_ep *ep,
 		cq_data_hdr->cq_data = tx_entry->cq_entry.data;
 		opt_hdr += sizeof(*cq_data_hdr);
 	}
+
+	if (base_hdr->flags & RXR_REQ_OPT_CONNID_HDR) {
+		struct rxr_opt_connid_hdr *connid_hdr;
+		struct efa_ep_addr *self_addr;
+
+		self_addr = (struct efa_ep_addr *)ep->core_addr;
+		connid_hdr = (struct rxr_opt_connid_hdr *)opt_hdr;
+		connid_hdr->sender_id = self_addr->qkey;
+		opt_hdr += sizeof(*connid_hdr);
+	}
+
 
 	pkt_entry->addr = tx_entry->addr;
 }
@@ -183,6 +207,13 @@ size_t rxr_pkt_req_base_hdr_size(struct rxr_pkt_entry *pkt_entry)
 	return hdr_size;
 }
 
+/**
+ * @brief return the optional raw addr header pointer in a req packet
+ *
+ * @param[in]	pkt_entry	an REQ packet entry
+ * @return	If the input has the optional raw addres header, return the pointer to it.
+ *		Otherwise, return NULL
+ */
 void *rxr_pkt_req_raw_addr(struct rxr_pkt_entry *pkt_entry)
 {
 	char *opt_hdr;
@@ -192,12 +223,47 @@ void *rxr_pkt_req_raw_addr(struct rxr_pkt_entry *pkt_entry)
 	base_hdr = rxr_get_base_hdr(pkt_entry->pkt);
 	opt_hdr = (char *)pkt_entry->pkt + rxr_pkt_req_base_hdr_size(pkt_entry);
 	if (base_hdr->flags & RXR_REQ_OPT_RAW_ADDR_HDR) {
+		/* For req packet, the optional connid header and the optional
+		 * raw address header are mutually exclusive.
+		 */
+		assert(!(base_hdr->flags & RXR_REQ_OPT_CONNID_HDR));
 		raw_addr_hdr = (struct rxr_req_opt_raw_addr_hdr *)opt_hdr;
 		return raw_addr_hdr->raw_addr;
 	}
 
 	return NULL;
 }
+
+/**
+ * @brief return the optional connid header pointer in a req packet
+ *
+ * @param[in]	pkt_entry	an REQ packet entry
+ * @return	If the input has the optional connid header, return the pointer to connid header
+ * 		Otherwise, return NULL
+ */
+struct rxr_opt_connid_hdr *rxr_pkt_req_connid_hdr(struct rxr_pkt_entry *pkt_entry)
+{
+	char *opt_hdr;
+	struct rxr_base_hdr *base_hdr;
+
+	base_hdr = rxr_get_base_hdr(pkt_entry->pkt);
+	opt_hdr = (char *)pkt_entry->pkt + rxr_pkt_req_base_hdr_size(pkt_entry);
+	if (base_hdr->flags & RXR_REQ_OPT_CONNID_HDR) {
+		/* For req packet, the optional connid header and the optional
+		 * raw address header are mutually exclusive. So the construction
+		 * of req header for reason.
+		 */
+		assert(!(base_hdr->flags & RXR_REQ_OPT_RAW_ADDR_HDR));
+
+		if (base_hdr->flags & RXR_REQ_OPT_CQ_DATA_HDR)
+			opt_hdr += sizeof(struct rxr_req_opt_cq_data_hdr);
+
+		return (struct rxr_opt_connid_hdr *)opt_hdr;
+	}
+
+	return NULL;
+}
+
 
 size_t rxr_pkt_req_hdr_size(struct rxr_pkt_entry *pkt_entry)
 {
@@ -207,13 +273,24 @@ size_t rxr_pkt_req_hdr_size(struct rxr_pkt_entry *pkt_entry)
 
 	base_hdr = rxr_get_base_hdr(pkt_entry->pkt);
 	opt_hdr = (char *)pkt_entry->pkt + rxr_pkt_req_base_hdr_size(pkt_entry);
+
+	/*
+	 * It is not possible to have both optional raw addr header and optional
+	 * connid header in a packet header.
+	 */
 	if (base_hdr->flags & RXR_REQ_OPT_RAW_ADDR_HDR) {
+		assert(!(base_hdr->flags & RXR_REQ_OPT_CONNID_HDR));
 		raw_addr_hdr = (struct rxr_req_opt_raw_addr_hdr *)opt_hdr;
 		opt_hdr += sizeof(struct rxr_req_opt_raw_addr_hdr) + raw_addr_hdr->addr_len;
 	}
 
 	if (base_hdr->flags & RXR_REQ_OPT_CQ_DATA_HDR)
 		opt_hdr += sizeof(struct rxr_req_opt_cq_data_hdr);
+
+	if (base_hdr->flags & RXR_REQ_OPT_CONNID_HDR) {
+		assert(!(base_hdr->flags & RXR_REQ_OPT_RAW_ADDR_HDR));
+		opt_hdr += sizeof(struct rxr_opt_connid_hdr);
+	}
 
 	return opt_hdr - (char *)pkt_entry->pkt;
 }
@@ -239,6 +316,11 @@ int64_t rxr_pkt_req_cq_data(struct rxr_pkt_entry *pkt_entry)
 
 size_t rxr_pkt_req_max_header_size(int pkt_type)
 {
+	/* max_hdr_size does not include optional connid hdr length because
+	 * it is impossible to have both optional connid hdr and opt_raw_addr_hdr
+	 * in the header, and length of opt raw addr hdr is larger than
+	 * connid hdr.
+	 */
 	int max_hdr_size = REQ_INF_LIST[pkt_type].base_hdr_size
 		+ sizeof(struct rxr_req_opt_raw_addr_hdr) + RXR_MAX_NAME_LENGTH
 		+ sizeof(struct rxr_req_opt_cq_data_hdr);
