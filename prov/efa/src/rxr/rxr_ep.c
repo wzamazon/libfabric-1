@@ -1446,24 +1446,37 @@ static inline void rxr_ep_check_peer_backoff_timer(struct rxr_ep *ep)
 	}
 }
 
-static inline void rdm_ep_poll_efa_cq(struct rxr_ep *ep,
+/**
+ * @brief poll rdma-core cq and process the cq entry
+ *
+ * @param[in]	ep		end point
+ * @param[in]	cqe_to_process	max number of cq entry to poll and process
+ */
+static inline void rdm_ep_poll_ibv_cq(struct rxr_ep *ep,
 				      size_t cqe_to_process)
 {
-	struct fi_cq_data_entry cq_entry;
-	fi_addr_t src_addr;
+	struct ibv_wc ibv_wc;
+	struct efa_cq *efa_cq;
+	struct efa_av *efa_av;
+	struct efa_ep *efa_ep;
+	struct rdm_peer *peer;
 	struct rxr_pkt_entry *pkt_entry;
 	ssize_t ret;
 	int i;
 
-	VALGRIND_MAKE_MEM_DEFINED(&cq_entry, sizeof(struct fi_cq_data_entry));
-
+	efa_ep = container_of(ep->rdm_ep, struct efa_ep, util_ep.ep_fid);
+	efa_av = efa_ep->av;
+	efa_cq = container_of(ep->rdm_cq, struct efa_cq, util_cq.cq_fid);
 	for (i = 0; i < cqe_to_process; i++) {
-		ret = fi_cq_readfrom(ep->rdm_cq, &cq_entry, 1, &src_addr);
+		ret = ibv_poll_cq(efa_cq->ibv_cq, 1, &ibv_wc);
 
-		if (ret == -FI_EAGAIN)
+		if (ret == 0)
 			return;
 
-		if (OFI_UNLIKELY(ret < 0)) {
+		if (OFI_UNLIKELY(ret < 0 || ibv_wc.status)) {
+			if (ret > 0 && ibv_wc.status)
+				ret = ibv_wc.status;
+
 			if (rxr_cq_handle_cq_error(ep, ret))
 				assert(0 &&
 				       "error writing error cq entry after reading from cq");
@@ -1472,25 +1485,26 @@ static inline void rdm_ep_poll_efa_cq(struct rxr_ep *ep,
 			return;
 		}
 
-		if (OFI_UNLIKELY(ret == 0))
-			return;
+		pkt_entry = (void *)(uintptr_t)ibv_wc.wr_id;
 
-		pkt_entry = cq_entry.op_context;
-
-		if (cq_entry.flags & (FI_SEND | FI_READ | FI_WRITE)) {
+		switch (ibv_wc.opcode) {
+		case IBV_WC_SEND:
 #if ENABLE_DEBUG
 			ep->send_comps++;
 #endif
 			rxr_pkt_handle_send_completion(ep, pkt_entry);
-		} else if (cq_entry.flags & (FI_RECV | FI_REMOTE_CQ_DATA)) {
-			pkt_entry->addr = src_addr;
-			pkt_entry->pkt_size = cq_entry.len;
+			break;
+		case IBV_WC_RECV:
+			peer = efa_ahn_qpn_to_peer(efa_av, ibv_wc.slid, ibv_wc.src_qp);
+			pkt_entry->addr = peer ? peer->efa_fiaddr : FI_ADDR_NOTAVAIL;
+			pkt_entry->pkt_size = ibv_wc.byte_len;
 			assert(pkt_entry->pkt_size > 0);
 			rxr_pkt_handle_recv_completion(ep, pkt_entry);
 #if ENABLE_DEBUG
 			ep->recv_comps++;
 #endif
-		} else {
+			break;
+		default:
 			FI_WARN(&rxr_prov, FI_LOG_EP_CTRL,
 				"Unhandled cq type\n");
 			assert(0 && "Unhandled cq type");
@@ -1569,7 +1583,7 @@ void rxr_ep_progress_internal(struct rxr_ep *ep)
 		rxr_ep_check_available_data_bufs_timer(ep);
 
 	// Poll the EFA completion queue
-	rdm_ep_poll_efa_cq(ep, rxr_env.efa_cq_read_size);
+	rdm_ep_poll_ibv_cq(ep, rxr_env.efa_cq_read_size);
 
 	// Poll the SHM completion queue if enabled
 	if (ep->use_shm)
