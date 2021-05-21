@@ -143,7 +143,10 @@ struct efa_ah {
 struct efa_conn {
 	struct efa_ah		*ah;
 	struct efa_ep_addr	ep_addr;
+	/* for FI_AV_TABLE, fi_addr is same as util_av_fi_addr,
+	 * for FI_AV_MAP, fi_addr is pointer to efa_conn; */
 	fi_addr_t		fi_addr;
+	fi_addr_t		util_av_fi_addr;
 	struct rdm_peer		rdm_peer;
 };
 
@@ -278,10 +281,6 @@ struct efa_recv_wr {
 	struct ibv_sge sge[];
 };
 
-typedef struct efa_conn *
-	(*efa_addr_to_conn_func)
-	(struct efa_av *av, fi_addr_t addr);
-
 struct efa_av {
 	struct fid_av		*shm_rdm_av;
 	fi_addr_t		shm_rdm_addr_map[EFA_SHM_MAX_AV_COUNT];
@@ -290,17 +289,15 @@ struct efa_av {
 	size_t			used;
 	size_t			shm_used;
 	enum fi_av_type		type;
-	efa_addr_to_conn_func	addr_to_conn;
 	struct efa_reverse_av	*reverse_av;
 	struct efa_ah		*ah_map;
 	struct util_av		util_av;
 	enum fi_ep_type         ep_type;
-	struct ofi_bufpool      *conn_pool;
 };
 
 struct efa_av_entry {
 	uint8_t			ep_addr[EFA_EP_ADDR_LEN];
-	struct efa_conn		*conn;
+	struct efa_conn		conn;
 };
 
 struct efa_ah_qpn {
@@ -373,8 +370,10 @@ int efa_cq_open(struct fid_domain *domain_fid, struct fi_cq_attr *attr,
 		struct fid_cq **cq_fid, void *context);
 
 /* AV sub-functions */
-int efa_rdm_av_insert_one(struct efa_av *av, struct efa_ep_addr *addr,
-		          fi_addr_t *fi_addr, uint64_t flags, void *context);
+int efa_av_insert_one(struct efa_av *av, struct efa_ep_addr *addr,
+		      fi_addr_t *fi_addr, uint64_t flags, void *context);
+
+struct efa_conn *efa_av_addr_to_conn(struct efa_av *av, fi_addr_t fi_addr);
 
 /* Caller must hold cq->inner_lock. */
 void efa_cq_inc_ref_cnt(struct efa_cq *cq, uint8_t sub_cq_idx);
@@ -506,7 +505,7 @@ struct rdm_peer *rxr_ep_get_peer(struct rxr_ep *ep, fi_addr_t addr)
 	util_av_entry = ofi_bufpool_get_ibuf(ep->util_ep.av->av_entry_pool,
 	                                     addr);
 	av_entry = (struct efa_av_entry *)util_av_entry->data;
-	return &av_entry->conn->rdm_peer;
+	return &av_entry->conn.rdm_peer;
 }
 
 static inline

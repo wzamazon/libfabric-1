@@ -64,7 +64,7 @@ struct efa_ep_addr *rxr_peer_raw_addr(struct rxr_ep *ep, fi_addr_t addr)
 
 	efa_ep = container_of(ep->rdm_ep, struct efa_ep, util_ep.ep_fid);
 	efa_av = efa_ep->av;
-	efa_conn = efa_av->addr_to_conn(efa_av, addr);
+	efa_conn = efa_av_addr_to_conn(efa_av, addr);
 
 	return &efa_conn->ep_addr;
 }
@@ -532,7 +532,7 @@ static int efa_rdm_av_entry_cleanup(struct util_av *av, void *data,
 				    fi_addr_t addr, void *arg)
 {
 	struct efa_av_entry *efa_av_entry = (struct efa_av_entry *)data;
-	struct rdm_peer *peer = &efa_av_entry->conn->rdm_peer;
+	struct rdm_peer *peer = &efa_av_entry->conn.rdm_peer;
 
 	if (!peer)
 		return 0;
