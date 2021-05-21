@@ -231,6 +231,9 @@ void efa_ah_release(struct efa_av *av, struct efa_ah *ah)
 	}
 }
 
+static
+void efa_conn_release(struct efa_av *av, struct efa_conn *conn);
+
 /**
  * @brief initialize the rdm related resources of an efa_conn object
  *
@@ -346,12 +349,12 @@ static
 struct efa_conn *efa_conn_alloc(struct efa_av *av, struct efa_ep_addr *raw_addr,
 				uint64_t flags, void *context)
 {
+	struct efa_reverse_av *reverse_av_entry;
 	struct util_av_entry *util_av_entry;
 	struct efa_av_entry *efa_av_entry;
-	struct efa_reverse_av *reverse_av;
-	struct efa_ah_qpn key;
-	struct efa_conn *conn;
+	struct efa_conn *conn, *prev_conn;
 	fi_addr_t util_av_fi_addr;
+	struct efa_ah_qpn key;
 	int err;
 
 	if (flags & FI_SYNC_ERR)
@@ -386,22 +389,35 @@ struct efa_conn *efa_conn_alloc(struct efa_av *av, struct efa_ep_addr *raw_addr,
 
 	key.ahn = conn->ah->ahn;
 	key.qpn = raw_addr->qpn;
-	/* This is correct since the same address should be mapped to the same ah. */
-	HASH_FIND(hh, av->reverse_av, &key, sizeof(key), reverse_av);
-	if (!reverse_av) {
-		reverse_av = malloc(sizeof(*reverse_av));
-		if (!reverse_av) {
-			errno = FI_ENOMEM;
-			goto err_release;
-		}
-
-		memcpy(&reverse_av->key, &key, sizeof(key));
-		reverse_av->conn = conn;
-		HASH_ADD(hh, av->reverse_av, key,
-			 sizeof(reverse_av->key), reverse_av);
-	} else {
-		reverse_av = NULL;
+	HASH_FIND(hh, av->reverse_av, &key, sizeof(key), reverse_av_entry);
+	if (reverse_av_entry) {
+		/*
+		 * If we found an existing entry in reverse_av, the peer must
+		 * have the same GID and qpn, but different qkey, which means
+		 * the old peer has been destroied. so we have to release the
+		 * corresponding efa_conn object
+		 */
+		prev_conn = reverse_av_entry->conn;
+		assert(prev_conn);
+		assert(memcmp(prev_conn->ep_addr.raw, conn->ep_addr.raw, EFA_GID_LEN)==0);
+		assert(prev_conn->ep_addr.qpn == conn->ep_addr.qpn);
+		assert(prev_conn->ep_addr.qkey != conn->ep_addr.qkey);
+		EFA_WARN(FI_LOG_AV, "QP reuse detected! Previous qkey: %d\n", prev_conn->ep_addr.qkey);
+		conn->rdm_peer.prev_qkey = prev_conn->ep_addr.qkey;
+		efa_conn_release(av, prev_conn);
 	}
+
+	reverse_av_entry = malloc(sizeof(*reverse_av_entry));
+	if (!reverse_av_entry) {
+		errno = FI_ENOMEM;
+		goto err_release;
+	}
+
+	memcpy(&reverse_av_entry->key, &key, sizeof(key));
+	reverse_av_entry->conn = conn;
+	HASH_ADD(hh, av->reverse_av, key,
+		 sizeof(reverse_av_entry->key),
+		 reverse_av_entry);
 
 	if (av->ep_type == FI_EP_RDM) {
 		err = efa_conn_rdm_init(av, conn);
@@ -413,9 +429,9 @@ struct efa_conn *efa_conn_alloc(struct efa_av *av, struct efa_ep_addr *raw_addr,
 	return conn;
 
 err_release:
-	if (reverse_av) {
-		HASH_DEL(av->reverse_av, reverse_av);
-		free(reverse_av);
+	if (reverse_av_entry) {
+		HASH_DEL(av->reverse_av, reverse_av_entry);
+		free(reverse_av_entry);
 	}
 
 	if (conn->ah)
