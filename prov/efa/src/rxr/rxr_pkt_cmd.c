@@ -825,6 +825,7 @@ void rxr_pkt_handle_recv_completion(struct rxr_ep *ep,
 {
 	struct rdm_peer *peer;
 	struct rxr_base_hdr *base_hdr;
+	struct rxr_base_opt_qkey_hdr *qkey_hdr;
 
 	base_hdr = rxr_get_base_hdr(pkt_entry->pkt);
 	if (base_hdr->type >= RXR_EXTRA_REQ_PKT_END) {
@@ -851,6 +852,32 @@ void rxr_pkt_handle_recv_completion(struct rxr_ep *ep,
 	}
 
 	assert(pkt_entry->addr != FI_ADDR_NOTAVAIL);
+	peer = rxr_ep_get_peer(ep, pkt_entry->addr);
+
+	qkey_hdr = rxr_pkt_qkey_hdr(pkt_entry);
+	if (qkey_hdr) {
+		struct efa_ep_addr *raw_addr;
+		bool ignore = false;
+
+		raw_addr = (struct efa_ep_addr *)ep->core_addr;
+
+		if (qkey_hdr->sender_qkey == peer->prev_qkey) {
+			ignore = true;
+			FI_WARN(&rxr_prov, FI_LOG_CQ, "Ingnoring a packet from a destroyed peer! sender_qkey: %d\n",
+				qkey_hdr->sender_qkey);
+		}
+
+		if (qkey_hdr->receiver_qkey != raw_addr->qkey) {
+			ignore = true;
+			FI_WARN(&rxr_prov, FI_LOG_CQ, "Ignoring a packet indeed for a different receiver! receiver_qkey: %d my_qkey: %d\n",
+				qkey_hdr->receiver_qkey, raw_addr->qkey);
+		}
+
+		if (ignore) {
+			rxr_pkt_entry_release_rx(ep, pkt_entry);
+			return;
+		}
+	}
 
 #if ENABLE_DEBUG
 	if (!ep->use_zcpy_rx) {
@@ -861,7 +888,7 @@ void rxr_pkt_handle_recv_completion(struct rxr_ep *ep,
 	rxr_pkt_print("Received", ep, (struct rxr_base_hdr *)pkt_entry->pkt);
 #endif
 #endif
-	peer = rxr_ep_get_peer(ep, pkt_entry->addr);
+	
 	if (!(peer->flags & RXR_PEER_HANDSHAKE_SENT_OR_QUEUED))
 		rxr_pkt_post_handshake_or_queue(ep, peer);
 
