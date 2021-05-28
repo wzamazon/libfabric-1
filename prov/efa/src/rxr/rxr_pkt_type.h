@@ -160,6 +160,8 @@ struct rxr_handshake_hdr {
 static_assert(sizeof(struct rxr_handshake_hdr) == 8, "rxr_handshake_hdr check");
 #endif
 
+#define RXR_HANDSHAKE_OPT_QKEY_HDR BIT_ULL(0)
+
 static inline
 struct rxr_handshake_hdr *rxr_get_handshake_hdr(void *pkt)
 {

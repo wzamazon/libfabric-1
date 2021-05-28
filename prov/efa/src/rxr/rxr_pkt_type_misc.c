@@ -52,6 +52,7 @@ ssize_t rxr_pkt_init_handshake(struct rxr_ep *ep,
 			       fi_addr_t addr)
 {
 	struct rxr_handshake_hdr *handshake_hdr;
+	struct rdm_peer *peer;
 
 	handshake_hdr = (struct rxr_handshake_hdr *)pkt_entry->pkt;
 	handshake_hdr->type = RXR_HANDSHAKE_PKT;
@@ -63,6 +64,15 @@ ssize_t rxr_pkt_init_handshake(struct rxr_ep *ep,
 
 	pkt_entry->pkt_size = sizeof(struct rxr_handshake_hdr)
 			      + RXR_NUM_PROTOCOL_VERSION * sizeof(uint64_t);
+
+	peer = rxr_ep_get_peer(ep, addr);
+	assert(peer);
+	if (rxr_peer_understand_opt_qkey_hdr(peer)) {
+		handshake_hdr->flags |= RXR_HANDSHAKE_OPT_QKEY_HDR;
+		rxr_pkt_init_qkey_hdr(ep, addr, pkt_entry->pkt + pkt_entry->pkt_size);
+		pkt_entry->pkt_size += sizeof(struct rxr_base_opt_qkey_hdr);
+	}
+
 	pkt_entry->addr = addr;
 	return 0;
 }
