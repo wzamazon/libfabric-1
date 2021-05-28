@@ -167,17 +167,12 @@ void rxr_pkt_init_req_hdr(struct rxr_ep *ep,
 	}
 
 	if (base_hdr->flags & RXR_REQ_OPT_CONNID_HDR) {
-		struct rxr_opt_connid_hdr *connid_hdr;
-		struct efa_ep_addr *self_addr;
-
-		self_addr = (struct efa_ep_addr *)ep->core_addr;
-		connid_hdr = (struct rxr_opt_connid_hdr *)opt_hdr;
-		connid_hdr->sender_id = self_addr->qkey;
-		opt_hdr += sizeof(*connid_hdr);
+		rxr_pkt_init_connid_hdr(ep, (struct rxr_opt_connid_hdr *)opt_hdr);
+		opt_hdr += sizeof(struct rxr_opt_connid_hdr);
 	}
 
-
 	pkt_entry->addr = tx_entry->addr;
+	assert(opt_hdr - pkt_entry->pkt == rxr_pkt_req_hdr_size(pkt_entry));
 }
 
 size_t rxr_pkt_req_base_hdr_size(struct rxr_pkt_entry *pkt_entry)

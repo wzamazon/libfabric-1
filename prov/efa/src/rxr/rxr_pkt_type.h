@@ -132,26 +132,9 @@ struct rxr_opt_connid_hdr {
 	uint32_t sender_id;
 };
 
-struct rxr_opt_connid_hdr *rxr_pkt_req_connid_hdr(struct rxr_pkt_entry *pkt_entry);
+void rxr_pkt_init_connid_hdr(struct rxr_ep *ep, struct rxr_opt_connid_hdr *connid_hdr);
 
-/**
- * @brief return the optional connid header pointer in a packet
- *
- * @param[in]	pkt_entry	an packet entry
- * @return	If the input has the optional connid header, return the pointer to connid header
- * 		Otherwise, return NULL
- */
-static inline
-struct rxr_opt_connid_hdr *rxr_pkt_connid_hdr(struct rxr_pkt_entry *pkt_entry)
-{
-	struct rxr_base_hdr *base_hdr;
-
-	base_hdr = rxr_get_base_hdr(pkt_entry->pkt);
-	if (base_hdr->type >= RXR_REQ_PKT_BEGIN)
-		return rxr_pkt_req_connid_hdr(pkt_entry);
-
-	return NULL;
-}
+struct rxr_opt_connid_hdr *rxr_pkt_connid_hdr(struct rxr_pkt_entry *pkt_entry);
 
 struct rxr_ep;
 struct rdm_peer;
@@ -207,14 +190,17 @@ struct rxr_cts_hdr {
 	uint32_t tx_id;
 	uint32_t rx_id;
 	uint64_t window;
+	struct rxr_opt_connid_hdr connid_hdr[0];
 };
 
 #if defined(static_assert) && defined(__x86_64__)
 static_assert(sizeof(struct rxr_cts_hdr) == 24, "rxr_cts_hdr check");
 #endif
 
-/* this flag is to indicated the CTS is the response of a RTR packet */
+/* this flag is to indicate the CTS is the response of a RTR packet */
 #define RXR_CTS_READ_REQ		BIT_ULL(7)
+/* this flag is to indicate the CTS has the optional connid header */
+#define RXR_CTS_OPT_CONNID_HDR		BIT_ULL(8)
 #define RXR_CTS_HDR_SIZE		(sizeof(struct rxr_cts_hdr))
 
 static inline

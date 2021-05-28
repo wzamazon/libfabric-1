@@ -232,6 +232,13 @@ ssize_t rxr_pkt_init_cts(struct rxr_ep *ep,
 					&window, &rx_entry->credit_cts);
 	cts_hdr->window = window;
 	pkt_entry->pkt_size = sizeof(struct rxr_cts_hdr);
+
+	if (rxr_peer_need_connid(peer)) {
+		cts_hdr->flags |= RXR_CTS_OPT_CONNID_HDR;
+		rxr_pkt_init_connid_hdr(ep, cts_hdr->connid_hdr);
+		pkt_entry->pkt_size += sizeof(struct rxr_opt_connid_hdr);
+	}
+
 	pkt_entry->addr = rx_entry->addr;
 	pkt_entry->x_entry = (void *)rx_entry;
 	return 0;

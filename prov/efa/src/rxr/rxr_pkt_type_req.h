@@ -91,6 +91,8 @@ struct rxr_req_opt_cq_data_hdr {
 
 void *rxr_pkt_req_raw_addr(struct rxr_pkt_entry *pkt_entry);
 
+struct rxr_opt_connid_hdr *rxr_pkt_req_connid_hdr(struct rxr_pkt_entry *pkt_entry);
+
 int64_t rxr_pkt_req_cq_data(struct rxr_pkt_entry *pkt_entry);
 
 size_t rxr_pkt_req_hdr_size(struct rxr_pkt_entry *pkt_entry);
