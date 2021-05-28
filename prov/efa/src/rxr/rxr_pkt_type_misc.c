@@ -218,6 +218,13 @@ ssize_t rxr_pkt_init_cts(struct rxr_ep *ep,
 					&window, &rx_entry->credit_cts);
 	cts_hdr->window = window;
 	pkt_entry->pkt_size = sizeof(struct rxr_cts_hdr);
+
+	if (rxr_peer_understand_opt_qkey_hdr(peer)) {
+		cts_hdr->flags |= RXR_CTS_OPT_QKEY_HDR;
+		rxr_pkt_init_qkey_hdr(ep, rx_entry->addr, pkt_entry->pkt + pkt_entry->pkt_size);
+		pkt_entry->pkt_size += sizeof(struct rxr_base_opt_qkey_hdr);
+	}
+
 	pkt_entry->addr = rx_entry->addr;
 	pkt_entry->x_entry = (void *)rx_entry;
 	return 0;
