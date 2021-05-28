@@ -168,21 +168,12 @@ void rxr_pkt_init_req_hdr(struct rxr_ep *ep,
 	}
 
 	if (base_hdr->flags & RXR_REQ_OPT_QKEY_HDR) {
-		struct rxr_base_opt_qkey_hdr *qkey_hdr;
-		struct efa_ep_addr *self_addr;
-		struct efa_ep_addr *peer_addr;
-
-		self_addr = (struct efa_ep_addr *)ep->core_addr;
-		peer_addr = rxr_peer_raw_addr(ep, tx_entry->addr);
-		assert(peer_addr);
-		qkey_hdr = (struct rxr_base_opt_qkey_hdr *)opt_hdr;
-		qkey_hdr->sender_qkey = self_addr->qkey;
-		qkey_hdr->receiver_qkey = peer_addr->qkey;
-		opt_hdr += sizeof(*qkey_hdr);
+		rxr_pkt_init_qkey_hdr(ep, tx_entry->addr, opt_hdr);
+		opt_hdr += sizeof(struct rxr_base_opt_qkey_hdr);
 	}
 
-
 	pkt_entry->addr = tx_entry->addr;
+	assert(opt_hdr - pkt_entry->pkt == rxr_pkt_req_hdr_size(pkt_entry));
 }
 
 size_t rxr_pkt_req_base_hdr_size(struct rxr_pkt_entry *pkt_entry)

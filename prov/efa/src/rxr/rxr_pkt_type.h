@@ -133,26 +133,9 @@ struct rxr_base_opt_qkey_hdr {
 	uint32_t receiver_qkey;
 };
 
-struct rxr_base_opt_qkey_hdr *rxr_pkt_req_qkey_hdr(struct rxr_pkt_entry *pkt_entry);
+void rxr_pkt_init_qkey_hdr(struct rxr_ep *ep, fi_addr_t addr, char *ptr);
 
-/**
- * @brief return the optional qkey header pointer in a packet
- *
- * @param[in]	pkt_entry	an packet entry
- * @return	If the input has the optional qkey header, return the pointer to qkey header
- * 		Otherwise, return NULL
- */
-static inline
-struct rxr_base_opt_qkey_hdr *rxr_pkt_qkey_hdr(struct rxr_pkt_entry *pkt_entry)
-{
-	struct rxr_base_hdr *base_hdr;
-
-	base_hdr = rxr_get_base_hdr(pkt_entry->pkt);
-	if (base_hdr->type >= RXR_REQ_PKT_BEGIN)
-		return rxr_pkt_req_qkey_hdr(pkt_entry);
-
-	return NULL;
-}
+struct rxr_base_opt_qkey_hdr *rxr_pkt_qkey_hdr(struct rxr_pkt_entry *pkt_entry);
 
 struct rxr_ep;
 struct rdm_peer;
@@ -214,8 +197,10 @@ struct rxr_cts_hdr {
 static_assert(sizeof(struct rxr_cts_hdr) == 24, "rxr_cts_hdr check");
 #endif
 
-/* this flag is to indicated the CTS is the response of a RTR packet */
+/* this flag is to indicate the CTS is the response of a RTR packet */
 #define RXR_CTS_READ_REQ		BIT_ULL(7)
+/* this flag is to indicate the CTS has the optional qkey header */
+#define RXR_CTS_OPT_QKEY_HDR		BIT_ULL(8)
 #define RXR_CTS_HDR_SIZE		(sizeof(struct rxr_cts_hdr))
 
 static inline
