@@ -69,5 +69,18 @@ struct rxr_opt_connid_hdr *rxr_pkt_connid_hdr(struct rxr_pkt_entry *pkt_entry)
 			: NULL;
 	}
 
+	if (base_hdr->type == RXR_HANDSHAKE_PKT) {
+		struct rxr_handshake_hdr *handshake_hdr;
+		char *opt_hdr;
+
+		handshake_hdr = rxr_get_handshake_hdr(pkt_entry->pkt);
+		opt_hdr = pkt_entry->pkt + sizeof(struct rxr_handshake_hdr)
+			  + (handshake_hdr->maxproto - handshake_hdr->version + 1) * sizeof(uint64_t);
+
+		return (base_hdr->flags & RXR_HANDSHAKE_OPT_CONNID_HDR)
+			? (struct rxr_opt_connid_hdr *)opt_hdr
+			: NULL;
+	}
+
 	return NULL;
 }
