@@ -49,7 +49,7 @@ void rxr_pkt_handle_data_send_completion(struct rxr_ep *ep,
 
 	tx_entry = (struct rxr_tx_entry *)pkt_entry->x_entry;
 	tx_entry->bytes_acked +=
-		rxr_get_data_pkt(pkt_entry->pkt)->hdr.seg_size;
+		rxr_get_data_hdr(pkt_entry->pkt)->seg_size;
 
 	if (tx_entry->total_len == tx_entry->bytes_acked) {
 		if (!(tx_entry->rxr_flags & RXR_DELIVERY_COMPLETE_REQUESTED))
@@ -141,18 +141,23 @@ void rxr_pkt_proc_data(struct rxr_ep *ep,
 void rxr_pkt_handle_data_recv(struct rxr_ep *ep,
 			      struct rxr_pkt_entry *pkt_entry)
 {
-	struct rxr_data_pkt *data_pkt;
+	struct rxr_data_hdr *data_hdr;
 	struct rxr_rx_entry *rx_entry;
+	size_t hdr_size;
 
-	data_pkt = (struct rxr_data_pkt *)pkt_entry->pkt;
+	data_hdr = rxr_get_data_hdr(pkt_entry->pkt);
 
 	rx_entry = ofi_bufpool_get_ibuf(ep->rx_entry_pool,
-					data_pkt->hdr.rx_id);
+					data_hdr->rx_id);
+
+	hdr_size = sizeof(struct rxr_data_hdr);
+	if (data_hdr->flags & RXR_DATA_OPT_CONNID_HDR)
+		hdr_size += sizeof(struct rxr_opt_connid_hdr);
 
 	rxr_pkt_proc_data(ep, rx_entry,
 			  pkt_entry,
-			  data_pkt->data,
-			  data_pkt->hdr.seg_offset,
-			  data_pkt->hdr.seg_size);
+			  pkt_entry->pkt + hdr_size,
+			  data_hdr->seg_offset,
+			  data_hdr->seg_size);
 }
 

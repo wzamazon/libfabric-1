@@ -70,7 +70,7 @@ ssize_t rxr_pkt_trigger_handshake(struct rxr_ep *ep,
 #if ENABLE_DEBUG
 void rxr_pkt_print(char *prefix,
 		   struct rxr_ep *ep,
-		   struct rxr_base_hdr *hdr);
+		   struct rxr_pkt_entry *pkt_entry);
 #endif
 
 #endif

@@ -234,23 +234,21 @@ struct rxr_data_hdr {
 	uint32_t rx_id;
 	uint64_t seg_size;
 	uint64_t seg_offset;
+	struct rxr_opt_connid_hdr connid_hdr[0];
 };
 
 #if defined(static_assert) && defined(__x86_64__)
 static_assert(sizeof(struct rxr_data_hdr) == 24, "rxr_data_hdr check");
 #endif
 
+/* this flag indicates the data packet contains the optional qkey header */
+#define RXR_DATA_OPT_CONNID_HDR		BIT_ULL(0)
 #define RXR_DATA_HDR_SIZE		(sizeof(struct rxr_data_hdr))
 
-struct rxr_data_pkt {
-	struct rxr_data_hdr hdr;
-	char data[];
-};
-
 static inline
-struct rxr_data_pkt *rxr_get_data_pkt(void *pkt)
+struct rxr_data_hdr *rxr_get_data_hdr(void *pkt)
 {
-	return (struct rxr_data_pkt *)pkt;
+	return (struct rxr_data_hdr *)pkt;
 }
 
 void rxr_pkt_proc_data(struct rxr_ep *ep,
