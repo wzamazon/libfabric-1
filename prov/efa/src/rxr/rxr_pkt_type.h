@@ -419,6 +419,7 @@ struct rxr_receipt_hdr {
 	uint32_t tx_id;
 	uint32_t msg_id;
 	int32_t padding;
+	struct rxr_opt_connid_hdr connid_hdr[0];
 };
 
 static inline
@@ -426,6 +427,8 @@ struct rxr_receipt_hdr *rxr_get_receipt_hdr(void *pkt)
 {
 	return (struct rxr_receipt_hdr *)pkt;
 }
+
+#define RXR_RECEIPT_OPT_CONNID_HDR BIT_ULL(0)
 
 /* receipt packet functions: init, handle_sent, handle_send_completion, recv*/
 int rxr_pkt_init_receipt(struct rxr_ep *ep, struct rxr_rx_entry *rx_entry,

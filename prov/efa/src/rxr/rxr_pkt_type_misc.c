@@ -571,6 +571,7 @@ void rxr_pkt_handle_eor_recv(struct rxr_ep *ep,
 int rxr_pkt_init_receipt(struct rxr_ep *ep, struct rxr_rx_entry *rx_entry,
 			 struct rxr_pkt_entry *pkt_entry)
 {
+	struct rdm_peer *peer;
 	struct rxr_receipt_hdr *receipt_hdr;
 
 	receipt_hdr = rxr_get_receipt_hdr(pkt_entry->pkt);
@@ -583,6 +584,14 @@ int rxr_pkt_init_receipt(struct rxr_ep *ep, struct rxr_rx_entry *rx_entry,
 	pkt_entry->pkt_size = sizeof(struct rxr_receipt_hdr);
 	pkt_entry->addr = rx_entry->addr;
 	pkt_entry->x_entry = rx_entry;
+
+	peer = rxr_ep_get_peer(ep, pkt_entry->addr);
+	assert(peer);
+	if (rxr_peer_need_connid(peer)) {
+		receipt_hdr->flags |= RXR_RECEIPT_OPT_CONNID_HDR;
+		rxr_pkt_init_connid_hdr(ep, receipt_hdr->connid_hdr);
+		pkt_entry->pkt_size += sizeof(struct rxr_opt_connid_hdr);
+	}
 
 	return 0;
 }
