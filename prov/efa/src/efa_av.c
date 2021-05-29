@@ -75,6 +75,67 @@ static bool efa_is_same_addr(struct efa_ep_addr *lhs, struct efa_ep_addr *rhs)
 }
 
 /**
+ * @brief initialize a rdm peer
+ *
+ * @param[in,out]	peer	rdm peer
+ * @param[in]		ep	rdm endpoint
+ * @param[in]		conn	efa conn object
+ */
+static inline
+void efa_rdm_peer_init(struct rxr_ep *ep, struct rdm_peer *peer, struct efa_conn *conn)
+{
+	memset(peer, 0, sizeof(struct rdm_peer));
+
+	dlist_init(&peer->rnr_entry);
+	dlist_init(&peer->tx_entry_list);
+	dlist_init(&peer->rx_entry_list);
+
+	peer->efa_fiaddr = conn->fi_addr;
+	peer->is_self = efa_is_same_addr((struct efa_ep_addr *)ep->core_addr,
+					 &conn->ep_addr);
+}
+
+/**
+ * @brief release resources accociated with a peer
+ *
+ * release reorder buffer, tx_entry list and rx_entry list of a peer
+ *
+ * @param[in,out]	peer 	rdm peer
+ */
+void efa_rdm_peer_clear(struct rxr_ep *ep, struct rdm_peer *peer)
+{
+	struct dlist_entry *tmp;
+	struct rxr_tx_entry *tx_entry;
+	struct rxr_rx_entry *rx_entry;
+	/*
+	 * TODO: Add support for wait/signal until all pending messages have
+	 * been sent/received so we do not attempt to complete a data transfer
+	 * or internal transfer after the EP is shutdown.
+	 */
+	if ((peer->flags & RXR_PEER_REQ_SENT) &&
+	    !(peer->flags & RXR_PEER_HANDSHAKE_RECEIVED))
+		FI_WARN_ONCE(&rxr_prov, FI_LOG_EP_CTRL, "Closing EP with unacked CONNREQs in flight\n");
+
+	efa_free_robuf(peer);
+
+	dlist_foreach_container_safe(&peer->tx_entry_list,
+				     struct rxr_tx_entry,
+				     tx_entry, peer_entry, tmp) {
+		rxr_release_tx_entry(ep, tx_entry);
+	}
+
+	dlist_foreach_container_safe(&peer->rx_entry_list,
+				     struct rxr_rx_entry,
+				     rx_entry, peer_entry, tmp) {
+		rxr_release_rx_entry(ep, rx_entry);
+	}
+	
+	memset(peer, 0, sizeof(struct rdm_peer));
+	dlist_init(&peer->tx_entry_list);
+	dlist_init(&peer->rx_entry_list);
+}
+
+/**
  * @brief find efa_conn struct using fi_addr
  *
  * @param[in]	av	efa av
@@ -261,10 +322,7 @@ int efa_conn_rdm_init(struct efa_av *av, struct efa_conn *conn)
 	rxr_ep = container_of(av->util_av.ep_list.next, struct rxr_ep, util_ep.av_entry);
 
 	peer = &conn->rdm_peer;
-	ofi_atomic_initialize32(&peer->use_cnt, 1);
-	peer->efa_fiaddr = conn->fi_addr;
-	peer->is_self = efa_is_same_addr((struct efa_ep_addr *)rxr_ep->core_addr,
-					 &conn->ep_addr);
+	efa_rdm_peer_init(rxr_ep, peer, conn);
 
 	/* If peer is local, insert the address into shm provider's av */
 	if (rxr_ep->use_shm && efa_is_local_peer(av, &conn->ep_addr)) {
@@ -316,6 +374,7 @@ void efa_conn_rdm_deinit(struct efa_av *av, struct efa_conn *conn)
 {
 	int err;
 	struct rdm_peer *peer;
+	struct rxr_ep *ep;
 
 	assert(av->ep_type == FI_EP_RDM);
 
@@ -331,7 +390,9 @@ void efa_conn_rdm_deinit(struct efa_av *av, struct efa_conn *conn)
 		}
 	}
 
-	efa_rdm_peer_reset(peer);
+	ep = container_of(av->util_av.ep_list.next, struct rxr_ep, util_ep.av_entry);
+	assert(ep);
+	efa_rdm_peer_clear(ep, peer);
 }
 
 /**
