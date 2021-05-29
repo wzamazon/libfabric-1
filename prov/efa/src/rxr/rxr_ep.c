@@ -110,7 +110,7 @@ struct rxr_rx_entry *rxr_ep_alloc_rx_entry(struct rxr_ep *ep, fi_addr_t addr, ui
 	rx_entry->addr = addr;
 	if (addr != FI_ADDR_UNSPEC) {
 		rx_entry->peer = rxr_ep_get_peer(ep, addr);
-		ofi_atomic_inc32(&rx_entry->peer->use_cnt);
+		dlist_insert_tail(&rx_entry->peer_entry, &rx_entry->peer->rx_entry_list);
 	} else {
 		/*
 		 * If msg->addr is not provided, rx_entry->peer will be set
@@ -257,7 +257,8 @@ void rxr_tx_entry_init(struct rxr_ep *ep, struct rxr_tx_entry *tx_entry,
 	tx_entry->state = RXR_TX_REQ;
 	tx_entry->addr = msg->addr;
 	tx_entry->peer = rxr_ep_get_peer(ep, tx_entry->addr);
-	ofi_atomic_inc32(&tx_entry->peer->use_cnt);
+	assert(tx_entry->peer);
+	dlist_insert_tail(&tx_entry->peer_entry, &tx_entry->peer->tx_entry_list);
 
 	tx_entry->send_flags = 0;
 	tx_entry->rxr_flags = 0;
@@ -365,7 +366,7 @@ void rxr_release_tx_entry(struct rxr_ep *ep, struct rxr_tx_entry *tx_entry)
 	int i, err = 0;
 
 	assert(tx_entry->peer);
-	ofi_atomic_dec32(&tx_entry->peer->use_cnt);
+	dlist_remove(&tx_entry->peer_entry);
 
 	for (i = 0; i < tx_entry->iov_count; i++) {
 		if (tx_entry->mr[i]) {
@@ -533,26 +534,12 @@ static int efa_rdm_av_entry_cleanup(struct util_av *av, void *data,
 {
 	struct efa_av_entry *efa_av_entry = (struct efa_av_entry *)data;
 	struct rdm_peer *peer = &efa_av_entry->conn.rdm_peer;
+	struct rxr_ep *ep;
 
-	if (!peer)
-		return 0;
+	ep = container_of(av->ep_list.next, struct rxr_ep, util_ep.av_entry);
+	assert(ep);
 
-	if (ofi_atomic_get32(&peer->use_cnt) > 1) {
-		FI_WARN_ONCE(&rxr_prov, FI_LOG_EP_CTRL, "Closing Peer with pending messages in flight\n");
-		return -FI_EBUSY;
-	}
-
-	/*
-	 * TODO: Add support for wait/signal until all pending messages have
-	 * been sent/received so we do not attempt to complete a data transfer
-	 * or internal transfer after the EP is shutdown.
-	 */
-	if ((peer->flags & RXR_PEER_REQ_SENT) &&
-	    !(peer->flags & RXR_PEER_HANDSHAKE_RECEIVED))
-		FI_WARN_ONCE(&rxr_prov, FI_LOG_EP_CTRL, "Closing EP with unacked CONNREQs in flight\n");
-
-	efa_rdm_peer_reset(peer);
-
+	efa_rdm_peer_clear(ep, peer);
 	return 0;
 }
 

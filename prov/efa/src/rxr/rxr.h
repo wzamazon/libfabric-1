@@ -326,7 +326,8 @@ struct rdm_peer {
 	int rnr_timeout_exp;		/* RNR timeout exponentation calc val */
 	struct dlist_entry rnr_entry;	/* linked to rxr_ep peer_backoff_list */
 	struct dlist_entry queued_entry; /* linked with peer_queued_list in rxr_ep */
-	ofi_atomic32_t use_cnt;		/* refcount */
+	struct dlist_entry tx_entry_list; /* a list of tx_entry related to this peer */
+	struct dlist_entry rx_entry_list; /* a list of rx_entry relased to this peer */
 };
 
 struct rxr_queued_ctrl_info {
@@ -429,6 +430,8 @@ struct rxr_rx_entry {
 	struct rxr_pkt_entry *unexp_pkt;
 	char *atomrsp_data;
 
+	/* linked with rx_entry_list in rdm_peer */
+	struct dlist_entry peer_entry;
 #if ENABLE_DEBUG
 	/* linked with rx_pending_list in rxr_ep */
 	struct dlist_entry rx_pending_entry;
@@ -501,6 +504,9 @@ struct rxr_tx_entry {
 
 	/* Queued packets due to TX queue full or RNR backoff */
 	struct dlist_entry queued_pkts;
+
+	/* peer_entry is linked with tx_entry_list in rdm_peer */
+	struct dlist_entry peer_entry;
 
 #if ENABLE_DEBUG
 	/* linked with tx_entry_list in rxr_ep */
@@ -796,8 +802,9 @@ struct rxr_rx_entry *rxr_ep_alloc_rx_entry(struct rxr_ep *ep,
 static inline void rxr_release_rx_entry(struct rxr_ep *ep,
 					struct rxr_rx_entry *rx_entry)
 {
-	if (rx_entry->peer)
-		ofi_atomic_dec32(&rx_entry->peer->use_cnt);
+	if (rx_entry->peer) {
+		dlist_remove(&rx_entry->peer_entry);
+	}
 
 #if ENABLE_DEBUG
 	dlist_remove(&rx_entry->rx_entry_entry);

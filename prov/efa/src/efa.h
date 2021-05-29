@@ -529,10 +529,12 @@ int efa_peer_in_use(struct rdm_peer *peer)
 {
 	struct rxr_pkt_entry *pending_pkt;
 
-	if (ofi_atomic_get32(&peer->use_cnt) > 1)
+	if (!dlist_empty(&peer->tx_entry_list) || !dlist_empty(&peer->rx_entry_list))
 		return -FI_EBUSY;
+
 	if ((peer->tx_pending) || (peer->flags & RXR_PEER_IN_BACKOFF))
 		return -FI_EBUSY;
+
 	if (peer->rx_init) {
 		pending_pkt = *ofi_recvwin_peek(peer->robuf);
 		if (pending_pkt && pending_pkt->pkt)
@@ -550,16 +552,7 @@ void efa_free_robuf(struct rdm_peer *peer)
 	ofi_buf_free(peer->robuf);
 }
 
-static inline
-void efa_rdm_peer_reset(struct rdm_peer *peer)
-{
-	efa_free_robuf(peer);
-	memset(peer, 0, sizeof(struct rdm_peer));
-#ifdef ENABLE_EFA_POISONING
-	rxr_poison_mem_region((uint32_t *)peer, sizeof(struct rdm_peer));
-#endif
-	dlist_init(&peer->rnr_entry);
-}
+void efa_rdm_peer_clear(struct rxr_ep *ep, struct rdm_peer *peer);
 
 static inline bool efa_ep_is_cuda_mr(struct efa_mr *efa_mr)
 {
