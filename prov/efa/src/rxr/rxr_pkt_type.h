@@ -287,6 +287,7 @@ struct rxr_readrsp_hdr {
 	uint32_t rx_id;
 	uint32_t tx_id;
 	uint64_t seg_size;
+	struct rxr_base_opt_qkey_hdr qkey_hdr[0];
 };
 
 static inline struct rxr_readrsp_hdr *rxr_get_readrsp_hdr(void *pkt)
@@ -294,16 +295,12 @@ static inline struct rxr_readrsp_hdr *rxr_get_readrsp_hdr(void *pkt)
 	return (struct rxr_readrsp_hdr *)pkt;
 }
 
+#define RXR_READRSP_OPT_QKEY_HDR	BIT_ULL(0)
 #define RXR_READRSP_HDR_SIZE	(sizeof(struct rxr_readrsp_hdr))
 
 #if defined(static_assert) && defined(__x86_64__)
 static_assert(sizeof(struct rxr_readrsp_hdr) == sizeof(struct rxr_data_hdr), "rxr_readrsp_hdr check");
 #endif
-
-struct rxr_readrsp_pkt {
-	struct rxr_readrsp_hdr hdr;
-	char data[];
-};
 
 int rxr_pkt_init_readrsp(struct rxr_ep *ep,
 			 struct rxr_tx_entry *tx_entry,
