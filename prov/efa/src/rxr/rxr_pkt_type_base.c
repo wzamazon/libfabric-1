@@ -82,6 +82,12 @@ struct rxr_opt_connid_hdr *rxr_pkt_connid_hdr(struct rxr_pkt_entry *pkt_entry)
 			: NULL;
 	}
 
+	if (base_hdr->type == RXR_READRSP_PKT) {
+		return (base_hdr->flags & RXR_READRSP_OPT_CONNID_HDR)
+			? rxr_get_readrsp_hdr(pkt_entry->pkt)->connid_hdr
+			: NULL;
+	}
+
 	if (base_hdr->type == RXR_HANDSHAKE_PKT) {
 		struct rxr_handshake_hdr *handshake_hdr;
 		char *opt_hdr;
@@ -199,7 +205,7 @@ size_t rxr_pkt_data_size(struct rxr_pkt_entry *pkt_entry)
 		return rxr_get_data_hdr(pkt_entry->pkt)->seg_size;
 
 	if (pkt_type == RXR_READRSP_PKT)
-		return pkt_entry->pkt_size - sizeof(struct rxr_readrsp_hdr);
+		return rxr_get_readrsp_hdr(pkt_entry->pkt)->seg_size;
 
 	if (pkt_type >= RXR_REQ_PKT_BEGIN) {
 		assert(pkt_type == RXR_EAGER_MSGRTM_PKT || pkt_type == RXR_EAGER_TAGRTM_PKT ||
