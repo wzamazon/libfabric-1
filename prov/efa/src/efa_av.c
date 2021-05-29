@@ -455,6 +455,8 @@ static
 void efa_conn_release(struct efa_av *av, struct efa_conn *conn)
 {
 	struct efa_reverse_av *reverse_av_entry;
+	struct util_av_entry *util_av_entry;
+	struct efa_av_entry *efa_av_entry;
 	struct efa_ah_qpn key;
 	char gidstr[INET6_ADDRSTRLEN];
 
@@ -470,11 +472,17 @@ void efa_conn_release(struct efa_av *av, struct efa_conn *conn)
 
 	efa_ah_release(av, conn->ah);
 
+	util_av_entry = ofi_bufpool_get_ibuf(av->util_av.av_entry_pool, conn->util_av_fi_addr);
+	assert(util_av_entry);
+	efa_av_entry = (struct efa_av_entry *)util_av_entry->data;
+
 	ofi_av_remove_addr(&av->util_av, conn->util_av_fi_addr);
+	memset(efa_av_entry->ep_addr, 0, EFA_EP_ADDR_LEN);
 
 	inet_ntop(AF_INET6, conn->ep_addr.raw, gidstr, INET6_ADDRSTRLEN);
 	EFA_INFO(FI_LOG_AV, "efa_conn released! conn[%p] GID[%s] QP[%u]\n",
 		 conn, gidstr, conn->ep_addr.qpn);
+
 	av->used--;
 }
 
