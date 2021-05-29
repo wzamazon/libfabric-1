@@ -88,6 +88,12 @@ struct rxr_opt_connid_hdr *rxr_pkt_connid_hdr(struct rxr_pkt_entry *pkt_entry)
 			: NULL;
 	}
 
+	if (base_hdr->type == RXR_EOR_PKT) {
+		return (base_hdr->flags & RXR_EOR_OPT_CONNID_HDR)
+			? rxr_get_eor_hdr(pkt_entry->pkt)->connid_hdr
+			: NULL;
+	}
+
 	if (base_hdr->type == RXR_HANDSHAKE_PKT) {
 		struct rxr_handshake_hdr *handshake_hdr;
 		char *opt_hdr;

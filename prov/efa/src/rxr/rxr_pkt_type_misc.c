@@ -534,6 +534,7 @@ void rxr_pkt_handle_rma_completion(struct rxr_ep *ep,
 int rxr_pkt_init_eor(struct rxr_ep *ep, struct rxr_rx_entry *rx_entry, struct rxr_pkt_entry *pkt_entry)
 {
 	struct rxr_eor_hdr *eor_hdr;
+	struct rdm_peer *peer;
 
 	eor_hdr = (struct rxr_eor_hdr *)pkt_entry->pkt;
 	eor_hdr->type = RXR_EOR_PKT;
@@ -544,6 +545,15 @@ int rxr_pkt_init_eor(struct rxr_ep *ep, struct rxr_rx_entry *rx_entry, struct rx
 	pkt_entry->pkt_size = sizeof(struct rxr_eor_hdr);
 	pkt_entry->addr = rx_entry->addr;
 	pkt_entry->x_entry = rx_entry;
+
+	peer = rxr_ep_get_peer(ep, rx_entry->addr);
+	assert(peer);
+	if (rxr_peer_need_connid(peer)) {
+		eor_hdr->flags |= RXR_EOR_OPT_CONNID_HDR;
+		rxr_pkt_init_connid_hdr(ep, eor_hdr->connid_hdr);
+		pkt_entry->pkt_size += sizeof(struct rxr_opt_connid_hdr);
+	}
+
 	return 0;
 }
 
