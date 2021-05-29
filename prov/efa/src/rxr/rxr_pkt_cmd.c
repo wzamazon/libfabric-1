@@ -55,7 +55,9 @@ ssize_t rxr_pkt_post_data(struct rxr_ep *rxr_ep,
 			  struct rxr_tx_entry *tx_entry)
 {
 	struct rxr_pkt_entry *pkt_entry;
-	struct rxr_data_pkt *data_pkt;
+	struct rxr_data_hdr *data_hdr;
+	struct rdm_peer *peer;
+	size_t hdr_size;
 	ssize_t ret;
 
 	pkt_entry = rxr_pkt_entry_alloc(rxr_ep, rxr_ep->tx_pkt_efa_pool);
@@ -69,24 +71,33 @@ ssize_t rxr_pkt_post_data(struct rxr_ep *rxr_ep,
 	pkt_entry->x_entry = (void *)tx_entry;
 	pkt_entry->addr = tx_entry->addr;
 
-	data_pkt = (struct rxr_data_pkt *)pkt_entry->pkt;
-
-	data_pkt->hdr.type = RXR_DATA_PKT;
-	data_pkt->hdr.version = RXR_BASE_PROTOCOL_VERSION;
-	data_pkt->hdr.flags = 0;
-
-	data_pkt->hdr.rx_id = tx_entry->rx_id;
+	data_hdr = rxr_get_data_hdr(pkt_entry->pkt);
+	data_hdr->type = RXR_DATA_PKT;
+	data_hdr->version = RXR_BASE_PROTOCOL_VERSION;
+	data_hdr->flags = 0;
+	data_hdr->rx_id = tx_entry->rx_id;
 
 	/*
 	 * Data packets are sent in order so using bytes_sent is okay here.
 	 */
-	data_pkt->hdr.seg_offset = tx_entry->bytes_sent;
-	data_pkt->hdr.seg_size = MIN(tx_entry->total_len - tx_entry->bytes_sent,
+	data_hdr->seg_offset = tx_entry->bytes_sent;
+	data_hdr->seg_size = MIN(tx_entry->total_len - tx_entry->bytes_sent,
 				     rxr_ep->mtu_size - sizeof(struct rxr_data_hdr));
-	data_pkt->hdr.seg_size = MIN(data_pkt->hdr.seg_size, tx_entry->window);
+	data_hdr->seg_size = MIN(data_hdr->seg_size, tx_entry->window);
 
-	rxr_pkt_setup_data(rxr_ep, pkt_entry, sizeof(struct rxr_data_hdr),
-			   tx_entry, tx_entry->bytes_sent, data_pkt->hdr.seg_size);
+	hdr_size = sizeof(struct rxr_data_hdr);
+
+	peer = rxr_ep_get_peer(rxr_ep, tx_entry->addr);
+	assert(peer);
+	if (rxr_peer_understand_opt_qkey_hdr(peer)) {
+		data_hdr->flags |= RXR_DATA_OPT_QKEY_HDR;
+		rxr_pkt_init_qkey_hdr(rxr_ep, tx_entry->addr, (char *)data_hdr->qkey_hdr);
+		hdr_size += sizeof(struct rxr_base_opt_qkey_hdr);
+	}
+
+	rxr_pkt_setup_data(rxr_ep, pkt_entry, hdr_size,
+			   tx_entry, tx_entry->bytes_sent,
+			   data_hdr->seg_size);
 
 	ret = rxr_pkt_entry_send(rxr_ep, pkt_entry, tx_entry->send_flags);
 	if (OFI_UNLIKELY(ret)) {
@@ -94,8 +105,8 @@ ssize_t rxr_pkt_post_data(struct rxr_ep *rxr_ep,
 		return ret;
 	}
 
-	tx_entry->bytes_sent += data_pkt->hdr.seg_size;
-	tx_entry->window -= data_pkt->hdr.seg_size;
+	tx_entry->bytes_sent += data_hdr->seg_size;
+	tx_entry->window -= data_hdr->seg_size;
 	assert(tx_entry->window >= 0);
 	return ret;
 }
@@ -891,7 +902,7 @@ void rxr_pkt_handle_recv_completion(struct rxr_ep *ep,
 		dlist_insert_tail(&pkt_entry->dbg_entry, &ep->rx_pkt_list);
 	}
 #ifdef ENABLE_RXR_PKT_DUMP
-	rxr_pkt_print("Received", ep, (struct rxr_base_hdr *)pkt_entry->pkt);
+	rxr_pkt_print("Received", ep, pkt_entry);
 #endif
 #endif
 	
@@ -1026,42 +1037,60 @@ void rxr_pkt_print_cts(char *prefix, struct rxr_cts_hdr *cts_hdr)
 }
 
 static
-void rxr_pkt_print_data(char *prefix, struct rxr_data_pkt *data_pkt)
+void rxr_pkt_print_data(char *prefix, struct rxr_pkt_entry *pkt_entry)
 {
+	struct rxr_data_hdr *data_hdr;
 	char str[RXR_PKT_DUMP_DATA_LEN * 4];
-	size_t str_len = RXR_PKT_DUMP_DATA_LEN * 4, l;
+	size_t str_len = RXR_PKT_DUMP_DATA_LEN * 4, l, hdr_size;
+	uint8_t *data;
 	int i;
 
 	str[str_len - 1] = '\0';
+
+	data_hdr = rxr_get_data_hdr(pkt_entry->pkt);
 
 	FI_DBG(&rxr_prov, FI_LOG_EP_DATA,
 	       "%s RxR DATA packet -  version: %" PRIu8
 	       " flags: %x rx_id: %" PRIu32
 	       " seg_size: %"	     PRIu64
 	       " seg_offset: %"	     PRIu64
-	       "\n", prefix, data_pkt->hdr.version, data_pkt->hdr.flags,
-	       data_pkt->hdr.rx_id, data_pkt->hdr.seg_size,
-	       data_pkt->hdr.seg_offset);
+	       "\n", prefix, data_hdr->version, data_hdr->flags,
+	       data_hdr->rx_id, data_hdr->seg_size,
+	       data_hdr->seg_offset);
+
+	hdr_size = sizeof(struct rxr_data_hdr);
+	if (data_hdr->flags & RXR_DATA_OPT_QKEY_HDR) {
+		hdr_size += sizeof(struct rxr_base_opt_qkey_hdr);
+		FI_DBG(&rxr_prov, FI_LOG_EP_DATA,
+		       "sender_qkey: %d receiver qkey: %d\n",
+		       data_hdr->qkey_hdr->sender_qkey, data_hdr->qkey_hdr->receiver_qkey);
+	}
+
+	data = (uint8_t *)pkt_entry->pkt + hdr_size;
 
 	l = snprintf(str, str_len, ("\tdata:    "));
-	for (i = 0; i < MIN(data_pkt->hdr.seg_size, RXR_PKT_DUMP_DATA_LEN);
+	for (i = 0; i < MIN(data_hdr->seg_size, RXR_PKT_DUMP_DATA_LEN);
 	     i++)
 		l += snprintf(str + l, str_len - l, "%02x ",
-			      ((uint8_t *)data_pkt->data)[i]);
+			      data[i]);
 	FI_DBG(&rxr_prov, FI_LOG_EP_DATA, "%s\n", str);
 }
 
-void rxr_pkt_print(char *prefix, struct rxr_ep *ep, struct rxr_base_hdr *hdr)
+void rxr_pkt_print(char *prefix, struct rxr_ep *ep, struct rxr_pkt_entry *pkt_entry)
 {
+	struct rxr_base_hdr *hdr;
+
+	hdr = rxr_get_base_hdr(pkt_entry->pkt);
+
 	switch (hdr->type) {
 	case RXR_HANDSHAKE_PKT:
-		rxr_pkt_print_handshake(prefix, (struct rxr_handshake_hdr *)hdr);
+		rxr_pkt_print_handshake(prefix, rxr_get_handshake_hdr(pkt_entry->pkt));
 		break;
 	case RXR_CTS_PKT:
-		rxr_pkt_print_cts(prefix, (struct rxr_cts_hdr *)hdr);
+		rxr_pkt_print_cts(prefix, rxr_get_cts_hdr(pkt_entry->pkt));
 		break;
 	case RXR_DATA_PKT:
-		rxr_pkt_print_data(prefix, (struct rxr_data_pkt *)hdr);
+		rxr_pkt_print_data(prefix, pkt_entry);
 		break;
 	default:
 		FI_WARN(&rxr_prov, FI_LOG_CQ, "invalid ctl pkt type %d\n",

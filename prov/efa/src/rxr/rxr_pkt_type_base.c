@@ -84,6 +84,11 @@ struct rxr_base_opt_qkey_hdr *rxr_pkt_qkey_hdr(struct rxr_pkt_entry *pkt_entry)
 			: NULL;
 	}
 
+	if (base_hdr->type == RXR_DATA_PKT) {
+		return (base_hdr->flags & RXR_DATA_OPT_QKEY_HDR)
+			? rxr_get_data_hdr(pkt_entry->pkt)->qkey_hdr
+			: NULL;
+	}
 
 	if (base_hdr->type == RXR_HANDSHAKE_PKT) {
 		struct rxr_handshake_hdr *handshake_hdr;
