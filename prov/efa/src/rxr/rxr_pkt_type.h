@@ -257,13 +257,11 @@ struct rxr_data_pkt *rxr_get_data_pkt(void *pkt)
 	return (struct rxr_data_pkt *)pkt;
 }
 
-ssize_t rxr_pkt_send_data(struct rxr_ep *ep,
-			  struct rxr_tx_entry *tx_entry,
-			  struct rxr_pkt_entry *pkt_entry);
-
-ssize_t rxr_pkt_send_data_desc(struct rxr_ep *ep,
-			       struct rxr_tx_entry *tx_entry,
-			       struct rxr_pkt_entry *pkt_entry);
+void rxr_pkt_setup_data(struct rxr_ep *ep,
+			struct rxr_pkt_entry *pkt_entry,
+			size_t hdr_size,
+			struct rxr_tx_entry *tx_entry,
+			size_t seg_offset, size_t seg_size);
 
 void rxr_pkt_proc_data(struct rxr_ep *ep,
 		       struct rxr_rx_entry *rx_entry,
