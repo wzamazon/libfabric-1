@@ -359,11 +359,14 @@ struct rxr_eor_hdr {
 	/* end of rxr_base_hdr */
 	uint32_t tx_id;
 	uint32_t rx_id;
+	struct rxr_base_opt_qkey_hdr qkey_hdr[0];
 };
 
 #if defined(static_assert) && defined(__x86_64__)
 static_assert(sizeof(struct rxr_eor_hdr) == 12, "rxr_eor_hdr check");
 #endif
+
+#define RXR_EOR_OPT_QKEY_HDR BIT_ULL(0)
 
 static inline
 struct rxr_eor_hdr *rxr_get_eor_hdr(void *pkt)
