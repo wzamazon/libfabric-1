@@ -1485,6 +1485,7 @@ static inline void rdm_ep_poll_ibv_cq(struct rxr_ep *ep,
 		case IBV_WC_RECV:
 			peer = efa_ahn_qpn_to_peer(efa_av, ibv_wc.slid, ibv_wc.src_qp);
 			pkt_entry->addr = peer ? peer->efa_fiaddr : FI_ADDR_NOTAVAIL;
+			fprintf(stderr, "slid: %d src_qp: %d pkt_entry->addr: %d\n", ibv_wc.slid, ibv_wc.src_qp, (int)(pkt_entry->addr));
 			pkt_entry->pkt_size = ibv_wc.byte_len;
 			assert(pkt_entry->pkt_size > 0);
 			rxr_pkt_handle_recv_completion(ep, pkt_entry);
