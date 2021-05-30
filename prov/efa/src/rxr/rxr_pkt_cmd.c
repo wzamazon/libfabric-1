@@ -548,7 +548,7 @@ size_t rxr_pkt_data_size(struct rxr_pkt_entry *pkt_entry)
 		return rxr_get_data_hdr(pkt_entry->pkt)->seg_size;
 
 	if (pkt_type == RXR_READRSP_PKT)
-		return pkt_entry->pkt_size - sizeof(struct rxr_readrsp_hdr);
+		return rxr_get_readrsp_hdr(pkt_entry->pkt)->seg_size;
 
 	if (pkt_type >= RXR_REQ_PKT_BEGIN) {
 		assert(pkt_type == RXR_EAGER_MSGRTM_PKT || pkt_type == RXR_EAGER_TAGRTM_PKT ||
