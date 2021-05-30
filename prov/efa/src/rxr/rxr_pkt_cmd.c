@@ -81,9 +81,6 @@ ssize_t rxr_pkt_post_data(struct rxr_ep *rxr_ep,
 	 * Data packets are sent in order so using bytes_sent is okay here.
 	 */
 	data_hdr->seg_offset = tx_entry->bytes_sent;
-	data_hdr->seg_size = MIN(tx_entry->total_len - tx_entry->bytes_sent,
-				     rxr_ep->mtu_size - sizeof(struct rxr_data_hdr));
-	data_hdr->seg_size = MIN(data_hdr->seg_size, tx_entry->window);
 
 	hdr_size = sizeof(struct rxr_data_hdr);
 
@@ -98,6 +95,10 @@ ssize_t rxr_pkt_post_data(struct rxr_ep *rxr_ep,
 	rxr_pkt_setup_data(rxr_ep, pkt_entry, hdr_size,
 			   tx_entry, tx_entry->bytes_sent,
 			   data_hdr->seg_size);
+
+	data_hdr->seg_size = MIN(tx_entry->total_len - tx_entry->bytes_sent,
+				 rxr_ep->mtu_size - hdr_size);
+	data_hdr->seg_size = MIN(data_hdr->seg_size, tx_entry->window);
 
 	ret = rxr_pkt_entry_send(rxr_ep, pkt_entry, tx_entry->send_flags);
 	if (OFI_UNLIKELY(ret)) {
