@@ -904,6 +904,7 @@ out:
 		break;
 	}
 
+	fprintf(stderr, "server client new\n");
 	return ret;
 }
 

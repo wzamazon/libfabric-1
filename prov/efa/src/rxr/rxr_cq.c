@@ -307,6 +307,9 @@ int rxr_cq_handle_error(struct rxr_ep *ep, ssize_t prov_errno, struct rxr_pkt_en
 	struct rdm_peer *peer;
 	ssize_t ret;
 
+	fprintf(stderr, "rxr_cq_handle_error. prov_errno: %ld pkt_entry: %p\n",
+		prov_errno, pkt_entry);
+
 	if (!pkt_entry)
 		goto write_eq_err;
 	/*
@@ -318,6 +321,7 @@ int rxr_cq_handle_error(struct rxr_ep *ep, ssize_t prov_errno, struct rxr_pkt_en
 	 */
 	peer = rxr_ep_get_peer(ep, pkt_entry->addr);
 	if (rxr_get_base_hdr(pkt_entry->pkt)->type == RXR_HANDSHAKE_PKT) {
+		fprintf(stderr, "encountered error for handshake packet\n");
 		FI_WARN(&rxr_prov, FI_LOG_CQ,
 			"Squelching error CQE for RXR_HANDSHAKE_PKT\n");
 		assert(peer);
