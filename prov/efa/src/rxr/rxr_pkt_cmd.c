@@ -837,12 +837,82 @@ fi_addr_t rxr_pkt_insert_addr(struct rxr_ep *ep, struct rxr_pkt_entry *pkt_entry
 	return rdm_addr;
 }
 
+/**
+ * @brief determine whether a received packet should be ignored
+ * If the packet is from a newly created peer (same gid+qpn, different qkey),
+ * This function will insert the new address to address vector, and set
+ * pkt_entry->addr accordingly.
+ *
+ * @param[in]	ep		endpoint
+ * @param[in]	pkt_entry	received packet entry
+ * @return	a boolean value indicating whether this packet should be ignored
+ */
+static inline
+bool rxr_pkt_should_ignore_received(struct rxr_ep *ep,
+				    struct rxr_pkt_entry *pkt_entry)
+{
+	struct rdm_peer *peer;
+	struct efa_ep_addr *self_addr;
+	struct efa_ep_addr *peer_addr; /* current peer address */
+	struct efa_ep_addr *sender_addr; /* peer address in packet header */
+	struct rxr_base_opt_qkey_hdr *qkey_hdr;
+
+	peer = rxr_ep_get_peer(ep, pkt_entry->addr);
+	peer_addr = peer ? rxr_peer_raw_addr(ep, pkt_entry->addr) : NULL;
+	self_addr = (struct efa_ep_addr *)ep->core_addr;
+	sender_addr = (rxr_get_base_hdr(pkt_entry->pkt)->type >= RXR_REQ_PKT_BEGIN)
+			? rxr_pkt_req_raw_addr(pkt_entry) : NULL;
+
+	if (sender_addr) {
+		if (peer && sender_addr->qkey == peer->prev_qkey) {
+			/* the message is from a destroyed peer, therefore should be ignored */
+			FI_WARN(&rxr_prov, FI_LOG_CQ, "Ignoring a packet from a destroyed peer!\n"
+				"packer sender qkey: %d matches peer->prev_qkey: %d\n",
+				sender_addr->qkey, peer->prev_qkey);
+			return true;
+		}
+
+		if (!peer || sender_addr->qkey != peer_addr->qkey) {
+			/* the message is from a newly created peer (same gid + qpn, new qkey)
+			 * therefore we need to insert the new address
+			 * to address vector */
+			pkt_entry->addr = rxr_pkt_insert_addr(ep, pkt_entry, sender_addr);
+		}
+
+		return false;
+	}
+
+	qkey_hdr = rxr_pkt_qkey_hdr(pkt_entry);
+	if (qkey_hdr) {
+		if (qkey_hdr->sender_qkey != peer_addr->qkey) {
+			FI_WARN(&rxr_prov, FI_LOG_CQ, "Ignoring a packet from a destroyed peer!\n"
+				"packer sender qkey: %d currrent peer qkey: %d\n",
+				qkey_hdr->sender_qkey, peer_addr->qkey);
+			return true;
+		}
+
+		if (qkey_hdr->receiver_qkey != self_addr->qkey) {
+			FI_WARN(&rxr_prov, FI_LOG_CQ, "Ignoring a packet intended for a different receiver!\n"
+				"packet receiver qkey: %d my qkey: %d\n",
+				qkey_hdr->receiver_qkey, self_addr->qkey);
+			return true;
+		}
+	}
+
+	if (pkt_entry->addr == FI_ADDR_NOTAVAIL) {
+		/* In this case, this packet must be from a destroyed address handle (AH) thus need to be ignored */
+		FI_WARN(&rxr_prov, FI_LOG_CQ, "Ignoring a packet from a destroyed ah!\n");
+		return true;
+	}
+
+	return false;
+}
+
 void rxr_pkt_handle_recv_completion(struct rxr_ep *ep,
 				    struct rxr_pkt_entry *pkt_entry)
 {
 	struct rdm_peer *peer;
 	struct rxr_base_hdr *base_hdr;
-	struct rxr_base_opt_qkey_hdr *qkey_hdr;
 
 	base_hdr = rxr_get_base_hdr(pkt_entry->pkt);
 	if (base_hdr->type >= RXR_EXTRA_REQ_PKT_END) {
@@ -856,46 +926,14 @@ void rxr_pkt_handle_recv_completion(struct rxr_ep *ep,
 		return;
 	}
 
-	if (base_hdr->type >= RXR_REQ_PKT_BEGIN) {
-		/*
-		 * as long as the REQ packet contain raw address
-		 * we will need to call insert because it might be a new
-		 * EP with new Q-Key.
-		 */
-		void *raw_addr;
-
-		raw_addr = rxr_pkt_req_raw_addr(pkt_entry);
-		if (OFI_UNLIKELY(raw_addr != NULL))
-			pkt_entry->addr = rxr_pkt_insert_addr(ep, pkt_entry, raw_addr);
+	if (rxr_pkt_should_ignore_received(ep, pkt_entry)) {
+		rxr_pkt_entry_release_rx(ep, pkt_entry);
+		return;
 	}
 
 	assert(pkt_entry->addr != FI_ADDR_NOTAVAIL);
 	peer = rxr_ep_get_peer(ep, pkt_entry->addr);
-
-	qkey_hdr = rxr_pkt_qkey_hdr(pkt_entry);
-	if (qkey_hdr) {
-		struct efa_ep_addr *raw_addr;
-		bool ignore = false;
-
-		raw_addr = (struct efa_ep_addr *)ep->core_addr;
-
-		if (qkey_hdr->sender_qkey == peer->prev_qkey) {
-			ignore = true;
-			FI_WARN(&rxr_prov, FI_LOG_CQ, "Ingnoring a packet from a destroyed peer! sender_qkey: %d\n",
-				qkey_hdr->sender_qkey);
-		}
-
-		if (qkey_hdr->receiver_qkey != raw_addr->qkey) {
-			ignore = true;
-			FI_WARN(&rxr_prov, FI_LOG_CQ, "Ignoring a packet indeed for a different receiver! receiver_qkey: %d my_qkey: %d\n",
-				qkey_hdr->receiver_qkey, raw_addr->qkey);
-		}
-
-		if (ignore) {
-			rxr_pkt_entry_release_rx(ep, pkt_entry);
-			return;
-		}
-	}
+	assert(peer);
 
 #if ENABLE_DEBUG
 	if (!ep->use_zcpy_rx) {
