@@ -303,10 +303,8 @@ int rxr_pkt_init_readrsp(struct rxr_ep *ep,
 	readrsp_hdr->flags = 0;
 	readrsp_hdr->tx_id = tx_entry->tx_id;
 	readrsp_hdr->rx_id = tx_entry->rx_id;
-	readrsp_hdr->seg_size = MIN(ep->mtu_size - sizeof(struct rxr_readrsp_hdr),
-				    tx_entry->total_len);
-	hdr_size = sizeof(struct rxr_readrsp_hdr);
 
+	hdr_size = sizeof(struct rxr_readrsp_hdr);
 	peer = rxr_ep_get_peer(ep, tx_entry->addr);
 	assert(peer);
 	if (rxr_peer_understand_opt_qkey_hdr(peer)) {
@@ -314,6 +312,9 @@ int rxr_pkt_init_readrsp(struct rxr_ep *ep,
 		rxr_pkt_init_qkey_hdr(ep, tx_entry->addr, (char *)readrsp_hdr->qkey_hdr);
 		hdr_size += sizeof(struct rxr_base_opt_qkey_hdr);
 	}
+
+	readrsp_hdr->seg_size = MIN(ep->mtu_size - hdr_size,
+				    tx_entry->total_len);
 
 	pkt_entry->addr = tx_entry->addr;
 	rxr_pkt_setup_data(ep, pkt_entry, hdr_size,
