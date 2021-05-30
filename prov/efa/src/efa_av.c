@@ -245,7 +245,6 @@ struct efa_ah *efa_ah_alloc(struct efa_av *av, const uint8_t *gid)
 		goto err_free_efa_ah;
 	}
 
-	fprintf(stderr, "ibv_av created!\n");
 	err = efadv_query_ah(efa_ah->ibv_ah, &efa_ah_attr, sizeof(efa_ah_attr));
 	if (err) {
 		errno = err;
@@ -261,7 +260,6 @@ struct efa_ah *efa_ah_alloc(struct efa_av *av, const uint8_t *gid)
 
 err_destroy_ibv_ah:
 	ibv_destroy_ah(efa_ah->ibv_ah);
-	fprintf(stderr, "ibv_ah destroyed!\n");
 err_free_efa_ah:
 	free(efa_ah);
 	return NULL;
@@ -288,7 +286,6 @@ void efa_ah_release(struct efa_av *av, struct efa_ah *ah)
 	if (ah->used == 0) {
 		HASH_DEL(av->ah_map, ah);
 		err = ibv_destroy_ah(ah->ibv_ah);
-		fprintf(stderr, "ibv_ah destroyed!\n");
 		if (err)
 			EFA_WARN(FI_LOG_AV, "ibv_destroy_ah failed! err=%d\n", err);
 		free(ah);
