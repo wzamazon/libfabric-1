@@ -545,7 +545,7 @@ size_t rxr_pkt_data_size(struct rxr_pkt_entry *pkt_entry)
 	pkt_type = rxr_get_base_hdr(pkt_entry->pkt)->type;
 
 	if (pkt_type == RXR_DATA_PKT)
-		return pkt_entry->pkt_size - sizeof(struct rxr_data_hdr);
+		return rxr_get_data_hdr(pkt_entry->pkt)->seg_size;
 
 	if (pkt_type == RXR_READRSP_PKT)
 		return pkt_entry->pkt_size - sizeof(struct rxr_readrsp_hdr);
