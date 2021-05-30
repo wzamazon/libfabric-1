@@ -451,6 +451,12 @@ struct efa_conn *efa_conn_alloc(struct efa_av *av, struct efa_ep_addr *raw_addr,
 	if (!conn->ah)
 		goto err_release;
 
+	if (av->ep_type == FI_EP_RDM) {
+		err = efa_conn_rdm_init(av, conn);
+		if (err)
+			goto err_release;
+	}
+
 	key.ahn = conn->ah->ahn;
 	key.qpn = raw_addr->qpn;
 	HASH_FIND(hh, av->reverse_av, &key, sizeof(key), reverse_av_entry);
@@ -466,8 +472,10 @@ struct efa_conn *efa_conn_alloc(struct efa_av *av, struct efa_ep_addr *raw_addr,
 		assert(memcmp(prev_conn->ep_addr.raw, conn->ep_addr.raw, EFA_GID_LEN)==0);
 		assert(prev_conn->ep_addr.qpn == conn->ep_addr.qpn);
 		assert(prev_conn->ep_addr.qkey != conn->ep_addr.qkey);
-		EFA_WARN(FI_LOG_AV, "QP reuse detected! Previous qkey: %d\n", prev_conn->ep_addr.qkey);
-		conn->rdm_peer.prev_qkey = prev_conn->ep_addr.qkey;
+		EFA_WARN(FI_LOG_AV, "QP reuse detected! Prev qkey: %d Prev addr: %d\n",
+			 prev_conn->ep_addr.qkey, (int)prev_conn->util_av_fi_addr);
+		if (av->ep_type == FI_EP_RDM)
+			conn->rdm_peer.prev_qkey = prev_conn->ep_addr.qkey;
 		efa_conn_release(av, prev_conn);
 	}
 
@@ -482,12 +490,6 @@ struct efa_conn *efa_conn_alloc(struct efa_av *av, struct efa_ep_addr *raw_addr,
 	HASH_ADD(hh, av->reverse_av, key,
 		 sizeof(reverse_av_entry->key),
 		 reverse_av_entry);
-
-	if (av->ep_type == FI_EP_RDM) {
-		err = efa_conn_rdm_init(av, conn);
-		if (err)
-			goto err_release;
-	}
 
 	av->used++;
 	return conn;
