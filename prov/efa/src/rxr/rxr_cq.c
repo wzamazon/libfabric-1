@@ -318,6 +318,7 @@ int rxr_cq_handle_error(struct rxr_ep *ep, ssize_t prov_errno, struct rxr_pkt_en
 	 */
 	peer = rxr_ep_get_peer(ep, pkt_entry->addr);
 	if (rxr_get_base_hdr(pkt_entry->pkt)->type == RXR_HANDSHAKE_PKT) {
+		fprintf(stderr, "dropping handshake packet!\n");
 		FI_WARN(&rxr_prov, FI_LOG_CQ,
 			"Squelching error CQE for RXR_HANDSHAKE_PKT\n");
 		assert(peer);
