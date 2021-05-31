@@ -325,7 +325,7 @@ struct rdm_peer {
 	size_t tx_pending;		/* tracks pending tx ops to this peer */
 	uint16_t tx_credits;		/* available send credits */
 	uint16_t rx_credits;		/* available credits to allocate */
-	uint64_t rnr_ts;		/* timestamp for RNR backoff tracking */
+	uint64_t rnr_timestamp;		/* timestamp for RNR backoff tracking */
 	int rnr_queued_pkt_cnt;		/* queued RNR packet count */
 	int timeout_interval;		/* initial RNR timeout value */
 	int rnr_timeout_exp;		/* RNR timeout exponentation calc val */
@@ -1036,11 +1036,13 @@ static inline void rxr_rm_tx_cq_check(struct rxr_ep *ep, struct util_cq *tx_cq)
 
 static inline bool rxr_peer_timeout_expired(struct rxr_ep *ep,
 					    struct rdm_peer *peer,
-					    uint64_t ts)
+					    uint64_t timestamp)
 {
-	return (ts >= (peer->rnr_ts + MIN(rxr_env.max_timeout,
-					  peer->timeout_interval *
-					  (1 << peer->rnr_timeout_exp))));
+	uint64_t timeout = MIN(rxr_env.max_timeout,
+			       peer->timeout_interval *
+			       (1 << peer->rnr_timeout_exp));
+
+	return (timestamp - peer->rnr_timestamp) >= timeout;
 }
 
 /* Performance counter declarations */
