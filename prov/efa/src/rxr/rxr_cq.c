@@ -270,29 +270,29 @@ static inline void rxr_cq_queue_pkt(struct rxr_ep *ep,
 
 	peer->flags |= RXR_PEER_IN_BACKOFF;
 
-	if (!peer->timeout_interval) {
-		if (rxr_env.timeout_interval)
-			peer->timeout_interval = rxr_env.timeout_interval;
+	if (!peer->rnr_timeout) {
+		if (rxr_env.initial_rnr_timeout)
+			peer->rnr_timeout = rxr_env.initial_rnr_timeout;
 		else
-			peer->timeout_interval = MAX(RXR_RAND_MIN_TIMEOUT,
-						     rand() %
-						     RXR_RAND_MAX_TIMEOUT);
+			peer->rnr_timeout = MAX(RXR_RAND_MIN_TIMEOUT,
+						rand() %
+						RXR_RAND_MAX_TIMEOUT);
 
-		peer->rnr_timeout_exp = 1;
 		FI_DBG(&rxr_prov, FI_LOG_EP_DATA,
 		       "initializing backoff timeout for peer: %" PRIu64
-		       " timeout: %d rnr_queued_pkts: %d\n",
-		       pkt_entry->addr, peer->timeout_interval,
+		       " timeout: %ld rnr_queued_pkts: %d\n",
+		       pkt_entry->addr, peer->rnr_timeout,
 		       peer->rnr_queued_pkt_cnt);
 	} else {
 		/* Only backoff once per peer per progress thread loop. */
 		if (!(peer->flags & RXR_PEER_BACKED_OFF)) {
 			peer->flags |= RXR_PEER_BACKED_OFF;
-			peer->rnr_timeout_exp++;
+			peer->rnr_timeout = MIN(rxr_env.max_rnr_timeout,
+						peer->rnr_timeout *2);
 			FI_DBG(&rxr_prov, FI_LOG_EP_DATA,
 			       "increasing backoff for peer: %" PRIu64
-			       " rnr_timeout_exp: %d rnr_queued_pkts: %d\n",
-			       pkt_entry->addr, peer->rnr_timeout_exp,
+			       " rnr_timeout: %ld rnr_queued_pkts: %d\n",
+			       pkt_entry->addr, peer->rnr_timeout,
 			       peer->rnr_queued_pkt_cnt);
 		}
 	}

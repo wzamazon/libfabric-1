@@ -229,8 +229,8 @@ struct rxr_env {
 	size_t rx_iov_limit;
 	int rx_copy_unexp;
 	int rx_copy_ooo;
-	int max_timeout;
-	int timeout_interval;
+	int max_rnr_timeout;
+	int initial_rnr_timeout;
 	size_t efa_cq_read_size;
 	size_t shm_cq_read_size;
 	size_t efa_max_medium_msg_size;
@@ -327,8 +327,7 @@ struct rdm_peer {
 	uint16_t rx_credits;		/* available credits to allocate */
 	uint64_t rnr_timestamp;		/* timestamp for RNR backoff tracking */
 	int rnr_queued_pkt_cnt;		/* queued RNR packet count */
-	int timeout_interval;		/* initial RNR timeout value */
-	int rnr_timeout_exp;		/* RNR timeout exponentation calc val */
+	uint64_t rnr_timeout;		/* RNR timeout value in us */
 	struct dlist_entry rnr_entry;	/* linked to rxr_ep peer_backoff_list */
 	struct dlist_entry handshake_queued_entry; /* linked with rxr_ep->handshake_queued_peer_list */
 	struct dlist_entry rx_unexp_list; /* a list of unexpected untagged rx_entry for this peer */
@@ -1038,11 +1037,7 @@ static inline bool rxr_peer_timeout_expired(struct rxr_ep *ep,
 					    struct rdm_peer *peer,
 					    uint64_t timestamp)
 {
-	uint64_t timeout = MIN(rxr_env.max_timeout,
-			       peer->timeout_interval *
-			       (1 << peer->rnr_timeout_exp));
-
-	return (timestamp - peer->rnr_timestamp) >= timeout;
+	return (timestamp - peer->rnr_timestamp) >= peer->rnr_timeout;
 }
 
 /* Performance counter declarations */

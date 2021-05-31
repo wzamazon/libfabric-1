@@ -68,8 +68,8 @@ struct rxr_env rxr_env = {
 	.rx_iov_limit = 0,
 	.rx_copy_unexp = 1,
 	.rx_copy_ooo = 1,
-	.max_timeout = RXR_DEF_RNR_MAX_TIMEOUT,
-	.timeout_interval = 0, /* 0 is random timeout */
+	.max_rnr_timeout = RXR_DEF_RNR_MAX_TIMEOUT,
+	.initial_rnr_timeout = 0, /* 0 is random timeout */
 	.efa_cq_read_size = 50,
 	.shm_cq_read_size = 50,
 	.efa_max_medium_msg_size = 65536,
@@ -121,9 +121,9 @@ static void rxr_init_env(void)
 			  &rxr_env.rx_copy_unexp);
 	fi_param_get_bool(&rxr_prov, "rx_copy_ooo",
 			  &rxr_env.rx_copy_ooo);
-	fi_param_get_int(&rxr_prov, "max_timeout", &rxr_env.max_timeout);
+	fi_param_get_int(&rxr_prov, "max_timeout", &rxr_env.max_rnr_timeout);
 	fi_param_get_int(&rxr_prov, "timeout_interval",
-			 &rxr_env.timeout_interval);
+			 &rxr_env.initial_rnr_timeout);
 	fi_param_get_size_t(&rxr_prov, "efa_cq_read_size",
 			 &rxr_env.efa_cq_read_size);
 	fi_param_get_size_t(&rxr_prov, "shm_cq_read_size",
