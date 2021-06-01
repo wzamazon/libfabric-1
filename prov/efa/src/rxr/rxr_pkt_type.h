@@ -132,16 +132,6 @@ struct rxr_opt_connid_hdr {
 	uint32_t sender_id;
 };
 
-void rxr_pkt_init_connid_hdr(struct rxr_ep *ep, struct rxr_opt_connid_hdr *connid_hdr);
-
-struct rxr_opt_connid_hdr *rxr_pkt_connid_hdr(struct rxr_pkt_entry *pkt_entry);
-
-void rxr_pkt_init_data_from_tx_entry(struct rxr_ep *ep,
-				     struct rxr_pkt_entry *pkt_entry,
-				     size_t hdr_size,
-				     struct rxr_tx_entry *tx_entry,
-				     size_t data_offset, size_t data_size);
-
 struct rxr_ep;
 struct rdm_peer;
 struct rxr_tx_entry;
@@ -272,9 +262,12 @@ void rxr_pkt_proc_data(struct rxr_ep *ep,
 void rxr_pkt_handle_data_send_completion(struct rxr_ep *ep,
 					 struct rxr_pkt_entry *pkt_entry);
 
-
 void rxr_pkt_handle_data_recv(struct rxr_ep *ep,
 			      struct rxr_pkt_entry *pkt_entry);
+
+void rxr_pkt_handle_data_copied(struct rxr_ep *ep,
+				struct rxr_pkt_entry *pkt_entry,
+				size_t data_size);
 
 /*
  *  READRSP packet data structures and functions
