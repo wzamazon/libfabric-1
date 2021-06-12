@@ -734,15 +734,6 @@ static inline void rxr_setup_msg(struct fi_msg *msg, const struct iovec *iov, vo
 	msg->data = data;
 }
 
-static inline void rxr_ep_peer_init_rx(struct rxr_ep *ep, struct rdm_peer *peer)
-{
-	assert(!peer->rx_init);
-
-	ofi_recvwin_buf_alloc(&peer->robuf, rxr_env.recvwin_size);
-	peer->rx_credits = rxr_env.rx_window_size;
-	peer->rx_init = 1;
-}
-
 static inline void rxr_ep_peer_init_tx(struct rdm_peer *peer)
 {
 	assert(!peer->tx_init);
