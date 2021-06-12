@@ -1089,6 +1089,14 @@ int rxr_ep_init(struct rxr_ep *ep)
 
 		if (ret)
 			goto err_free;
+
+		ret = ofi_bufpool_grow(ep->rx_unexp_pkt_pool);
+		if (ret) {
+			FI_WARN(&rxr_prov, FI_LOG_CQ,
+				"cannot allocate memory for unexpected packet pool. error: %s\n",
+				strerror(-ret));
+			goto err_free;
+		}
 	}
 
 	if (rxr_env.rx_copy_ooo) {
