@@ -848,6 +848,7 @@ out:
 		break;
 	}
 
+	fprintf(stderr, "main + perf fix\n");
 	return ret;
 }
 
