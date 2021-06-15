@@ -612,6 +612,8 @@ struct rxr_ep {
 	/* staging area for unexpected and out-of-order packets */
 	struct ofi_bufpool *rx_unexp_pkt_pool;
 	struct ofi_bufpool *rx_ooo_pkt_pool;
+	int max_number_ooo_pkt;
+	int number_ooo_pkt;
 
 	/* staging area for read copy */
 	struct ofi_bufpool *rx_readcopy_pkt_pool;

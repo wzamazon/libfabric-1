@@ -604,8 +604,11 @@ static void rxr_ep_free_res(struct rxr_ep *rxr_ep)
 		ofi_bufpool_destroy(rxr_ep->rx_readcopy_pkt_pool);
 	}
 
-	if (rxr_ep->rx_ooo_pkt_pool)
+	if (rxr_ep->rx_ooo_pkt_pool) {
 		ofi_bufpool_destroy(rxr_ep->rx_ooo_pkt_pool);
+		if (rxr_ep->max_number_ooo_pkt > 0)
+			fprintf(stderr, "max number of ooo_pkt: %d\n", rxr_ep->max_number_ooo_pkt);
+	}
 
 	if (rxr_ep->rx_unexp_pkt_pool)
 		ofi_bufpool_destroy(rxr_ep->rx_unexp_pkt_pool);
@@ -1092,6 +1095,8 @@ int rxr_ep_init(struct rxr_ep *ep)
 	}
 
 	if (rxr_env.rx_copy_ooo) {
+		ep->number_ooo_pkt = 0;
+		ep->max_number_ooo_pkt = 0;
 		ret = ofi_bufpool_create(&ep->rx_ooo_pkt_pool, entry_sz,
 					 RXR_BUF_POOL_ALIGNMENT, 0,
 					 rxr_env.recvwin_size, 0);

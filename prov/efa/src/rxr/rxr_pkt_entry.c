@@ -185,6 +185,10 @@ void rxr_pkt_entry_release_rx(struct rxr_ep *ep,
 		ep->rx_readcopy_pkt_pool_used--;
 	}
 
+	if (pkt_entry->type == RXR_PKT_ENTRY_OOO) {
+		ep->number_ooo_pkt--;
+	}
+
 #if ENABLE_DEBUG
 	dlist_remove(&pkt_entry->dbg_entry);
 #endif

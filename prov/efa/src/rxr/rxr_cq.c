@@ -576,6 +576,8 @@ int rxr_cq_reorder_msg(struct rxr_ep *ep,
 	if (OFI_LIKELY(rxr_env.rx_copy_ooo)) {
 		assert(pkt_entry->type == RXR_PKT_ENTRY_POSTED);
 		ooo_entry = rxr_pkt_entry_clone(ep, ep->rx_ooo_pkt_pool, pkt_entry, RXR_PKT_ENTRY_OOO);
+		ep->number_ooo_pkt++;
+		ep->max_number_ooo_pkt = MAX(ep->max_number_ooo_pkt, ep->number_ooo_pkt);
 		if (OFI_UNLIKELY(!ooo_entry)) {
 			FI_WARN(&rxr_prov, FI_LOG_EP_CTRL,
 				"Unable to allocate rx_pkt_entry for OOO msg\n");
