@@ -620,11 +620,16 @@ void efa_rdm_peer_reset(struct rdm_peer *peer)
 	if (peer->robuf.pending)
 		ofi_recvwin_free(&peer->robuf);
 
+	if (peer->flags & RXR_PEER_HANDSHAKE_QUEUED)
+		dlist_remove(&peer->handshake_queued_entry);
+
 	memset(peer, 0, sizeof(struct rdm_peer));
 #ifdef ENABLE_EFA_POISONING
 	rxr_poison_mem_region((uint32_t *)peer, sizeof(struct rdm_peer));
 #endif
 	dlist_init(&peer->rnr_entry);
+
+
 }
 
 static inline bool efa_ep_is_cuda_mr(struct efa_mr *efa_mr)
