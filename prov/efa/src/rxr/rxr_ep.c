@@ -99,8 +99,6 @@ struct rxr_rx_entry *rxr_ep_alloc_rx_entry(struct rxr_ep *ep, fi_addr_t addr, ui
 #endif
 	rx_entry->type = RXR_RX_ENTRY;
 	rx_entry->rx_id = ofi_buf_index(rx_entry);
-	dlist_init(&rx_entry->queued_pkts);
-
 	rx_entry->state = RXR_RX_INIT;
 	rx_entry->addr = addr;
 	if (addr != FI_ADDR_UNSPEC) {
@@ -360,7 +358,6 @@ void rxr_tx_entry_init(struct rxr_ep *ep, struct rxr_tx_entry *tx_entry,
 	tx_entry->iov_mr_start = 0;
 	tx_entry->iov_offset = 0;
 	tx_entry->msg_id = 0;
-	dlist_init(&tx_entry->queued_pkts);
 
 	memcpy(&tx_entry->iov[0], msg->msg_iov, sizeof(struct iovec) * msg->iov_count);
 	memset(tx_entry->mr, 0, sizeof(*tx_entry->mr) * msg->iov_count);
@@ -469,7 +466,6 @@ void rxr_release_tx_entry(struct rxr_ep *ep, struct rxr_tx_entry *tx_entry)
 #if ENABLE_DEBUG
 	dlist_remove(&tx_entry->tx_entry_entry);
 #endif
-	assert(dlist_empty(&tx_entry->queued_pkts));
 #ifdef ENABLE_EFA_POISONING
 	rxr_poison_mem_region((uint32_t *)tx_entry,
 			      sizeof(struct rxr_tx_entry));
@@ -616,24 +612,6 @@ static void rxr_ep_free_res(struct rxr_ep *rxr_ep)
 	dlist_foreach(&rxr_ep->rx_unexp_tagged_list, entry) {
 		rx_entry = container_of(entry, struct rxr_rx_entry, entry);
 		rxr_pkt_entry_release_rx(rxr_ep, rx_entry->unexp_pkt);
-	}
-
-	dlist_foreach(&rxr_ep->rx_entry_queued_list, entry) {
-		rx_entry = container_of(entry, struct rxr_rx_entry,
-					queued_entry);
-		dlist_foreach_container_safe(&rx_entry->queued_pkts,
-					     struct rxr_pkt_entry,
-					     pkt, entry, tmp)
-			rxr_pkt_entry_release_tx(rxr_ep, pkt);
-	}
-
-	dlist_foreach(&rxr_ep->tx_entry_queued_list, entry) {
-		tx_entry = container_of(entry, struct rxr_tx_entry,
-					queued_entry);
-		dlist_foreach_container_safe(&tx_entry->queued_pkts,
-					     struct rxr_pkt_entry,
-					     pkt, entry, tmp)
-			rxr_pkt_entry_release_tx(rxr_ep, pkt);
 	}
 
 	dlist_foreach_safe(&rxr_ep->rx_pkt_list, entry, tmp) {
@@ -1286,7 +1264,7 @@ int rxr_ep_init(struct rxr_ep *ep)
 	dlist_init(&ep->tx_entry_queued_list);
 	dlist_init(&ep->tx_pending_list);
 	dlist_init(&ep->read_pending_list);
-	dlist_init(&ep->peer_backoff_list);
+	dlist_init(&ep->rnr_queued_peer_list);
 	dlist_init(&ep->handshake_queued_peer_list);
 #if ENABLE_DEBUG
 	dlist_init(&ep->rx_pending_list);
@@ -1479,21 +1457,21 @@ static inline void rxr_ep_check_available_data_bufs_timer(struct rxr_ep *ep)
 	}
 }
 
-static inline void rxr_ep_check_peer_backoff_timer(struct rxr_ep *ep)
+static inline
+void rxr_ep_check_peer_backoff_timer(struct rxr_ep *ep)
 {
 	struct rdm_peer *peer;
 	struct dlist_entry *tmp;
 
-	if (OFI_LIKELY(dlist_empty(&ep->peer_backoff_list)))
+	if (OFI_LIKELY(dlist_empty(&ep->rnr_queued_peer_list)))
 		return;
 
-	dlist_foreach_container_safe(&ep->peer_backoff_list, struct rdm_peer,
-				     peer, rnr_entry, tmp) {
-		peer->flags &= ~RXR_PEER_BACKED_OFF;
-		if (!rxr_peer_timeout_expired(ep, peer, ofi_gettime_us()))
-			continue;
-		peer->flags &= ~RXR_PEER_IN_BACKOFF;
-		dlist_remove(&peer->rnr_entry);
+	dlist_foreach_container_safe(&ep->rnr_queued_peer_list, struct rdm_peer,
+				     peer, rnr_queued_entry, tmp) {
+		assert(!dlist_empty(&peer->rnr_queued_pkts));
+		if (peer->flags & RXR_PEER_IN_BACKOFF &&
+		    rxr_peer_timeout_expired(ep, peer, ofi_gettime_us()))
+			peer->flags &= ~RXR_PEER_IN_BACKOFF;
 	}
 }
 
@@ -1693,6 +1671,32 @@ void rxr_ep_progress_internal(struct rxr_ep *ep)
 	}
 
 	/*
+	 * Resend handshake packet for any peers where the first
+	 * handshake send failed.
+	 */
+	dlist_foreach_container_safe(&ep->rnr_queued_peer_list,
+				     struct rdm_peer, peer,
+				     rnr_queued_entry, tmp) {
+
+		if (peer->flags & RXR_PEER_IN_BACKOFF)
+			continue;
+
+		/* rxr_ep_send_queued_pkts will removed sent packets
+		 * from peer->rnr_queued_pkts
+		 */
+		ret = rxr_ep_send_queued_pkts(ep, &peer->rnr_queued_pkts);
+		if (ret == -FI_EAGAIN)
+			break;
+
+		if (ret)
+			goto rnr_err;
+
+		assert(dlist_empty(&peer->rnr_queued_pkts));
+		dlist_remove(&peer->rnr_queued_entry);
+		peer->flags &= ~RXR_PEER_RNR_QUEUED;
+	}
+
+	/*
 	 * Send any queued ctrl packets.
 	 */
 	dlist_foreach_container_safe(&ep->rx_entry_queued_list,
@@ -1704,20 +1708,9 @@ void rxr_ep_progress_internal(struct rxr_ep *ep)
 		if (peer->flags & RXR_PEER_IN_BACKOFF)
 			continue;
 
-		if (rx_entry->state == RXR_RX_QUEUED_CTRL) {
-			/*
-			 * We should only have one packet pending at a time for
-			 * rx_entry. Either the send failed due to RNR or the
-			 * rx_entry is queued but not both.
-			 */
-			assert(dlist_empty(&rx_entry->queued_pkts));
-			ret = rxr_pkt_post_ctrl(ep, RXR_RX_ENTRY, rx_entry,
-						rx_entry->queued_ctrl.type,
-						rx_entry->queued_ctrl.inject);
-		} else {
-			ret = rxr_ep_send_queued_pkts(ep, &rx_entry->queued_pkts);
-		}
-
+		ret = rxr_pkt_post_ctrl(ep, RXR_RX_ENTRY, rx_entry,
+					rx_entry->queued_ctrl.type,
+					rx_entry->queued_ctrl.inject);
 		if (ret == -FI_EAGAIN)
 			break;
 		if (OFI_UNLIKELY(ret))
@@ -1745,38 +1738,15 @@ void rxr_ep_progress_internal(struct rxr_ep *ep)
 		if (peer->flags & RXR_PEER_IN_BACKOFF)
 			continue;
 
-		/*
-		 * It is possible to receive an RNR after we queue this
-		 * tx_entry if we run out of resources in the medium message
-		 * protocol. Ensure all queued packets are posted before
-		 * continuing to post additional control messages.
-		 */
-		ret = rxr_ep_send_queued_pkts(ep, &tx_entry->queued_pkts);
+		ret = rxr_pkt_post_ctrl(ep, RXR_TX_ENTRY, tx_entry,
+					tx_entry->queued_ctrl.type,
+					tx_entry->queued_ctrl.inject);
 		if (ret == -FI_EAGAIN)
 			break;
 		if (OFI_UNLIKELY(ret))
 			goto tx_err;
 
-		if (tx_entry->state == RXR_TX_QUEUED_CTRL) {
-			ret = rxr_pkt_post_ctrl(ep, RXR_TX_ENTRY, tx_entry,
-						tx_entry->queued_ctrl.type,
-						tx_entry->queued_ctrl.inject);
-			if (ret == -FI_EAGAIN)
-				break;
-			if (OFI_UNLIKELY(ret))
-				goto tx_err;
-		}
-
 		dlist_remove(&tx_entry->queued_entry);
-
-		if (tx_entry->state == RXR_TX_QUEUED_REQ_RNR ||
-		    tx_entry->state == RXR_TX_QUEUED_CTRL) {
-			tx_entry->state = RXR_TX_REQ;
-		} else if (tx_entry->state == RXR_TX_QUEUED_DATA_RNR) {
-			tx_entry->state = RXR_TX_SEND;
-			dlist_insert_tail(&tx_entry->entry,
-					  &ep->tx_pending_list);
-		}
 	}
 
 	/*
@@ -1881,6 +1851,15 @@ handshake_err:
 	assert(0 && "Failed to post HANDSHAKE to peer");
 	efa_eq_write_error(&ep->util_ep, FI_EIO, -ret);
 	return;
+
+rnr_err:
+	FI_WARN(&rxr_prov, FI_LOG_EP_CTRL,
+		"Failed to repost rnr packets to peer %ld: %s\n",
+		peer->efa_fiaddr, fi_strerror(-ret));
+	assert(0 && "Failed to post HANDSHAKE to peer");
+	efa_eq_write_error(&ep->util_ep, FI_EIO, -ret);
+	return;
+
 }
 
 void rxr_ep_progress(struct util_ep *util_ep)

@@ -509,7 +509,6 @@ ssize_t rxr_pkt_trigger_handshake(struct rxr_ep *ep,
 	tx_entry->msg_id = -1;
 	tx_entry->cq_entry.flags = FI_RMA | FI_WRITE;
 	tx_entry->cq_entry.buf = NULL;
-	dlist_init(&tx_entry->queued_pkts);
 
 	tx_entry->type = RXR_TX_ENTRY;
 	tx_entry->op = ofi_op_write;

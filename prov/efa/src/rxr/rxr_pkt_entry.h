@@ -65,7 +65,7 @@ struct rxr_pkt_sendv {
 };
 
 struct rxr_pkt_entry {
-	/* for rx/tx_entry queued_pkts list */
+	/* for peer->rnr_pkt_list list */
 	struct dlist_entry entry;
 #if ENABLE_DEBUG
 	/* for tx/rx debug list or posted buf list */

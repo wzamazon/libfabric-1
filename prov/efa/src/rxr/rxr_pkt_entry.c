@@ -90,21 +90,24 @@ void rxr_pkt_entry_release_tx(struct rxr_ep *ep,
 	dlist_remove(&pkt->dbg_entry);
 #endif
 	/*
-	 * Decrement rnr_queued_pkts counter and reset backoff for this peer if
-	 * we get a send completion for a retransmitted packet.
+	 * Reset backoff for this peer if we get a send completion for a retransmitted packet.
 	 */
 	if (OFI_UNLIKELY(pkt->state == RXR_PKT_ENTRY_RNR_RETRANSMIT)) {
 		peer = rxr_ep_get_peer(ep, pkt->addr);
-		assert(peer);
-		peer->rnr_queued_pkt_cnt--;
-		peer->rnr_timeout = 0;
-		if (peer->flags & RXR_PEER_IN_BACKOFF)
-			dlist_remove(&peer->rnr_entry);
-		peer->flags &= ~RXR_PEER_IN_BACKOFF;
-		FI_DBG(&rxr_prov, FI_LOG_EP_DATA,
-		       "reset backoff timer for peer: %" PRIu64 "\n",
-		       pkt->addr);
+		assert(!peer->is_local);
+		/*
+		 * If this packet is a retransmitted packet, unset the BACKOFF
+		 * flags, so other RNR packets get resend immediately.
+		 */
+		if (OFI_UNLIKELY(pkt->state == RXR_PKT_ENTRY_RNR_RETRANSMIT)) {
+			peer->rnr_timeout = 0;
+			peer->flags &= ~RXR_PEER_IN_BACKOFF;
+			FI_DBG(&rxr_prov, FI_LOG_EP_DATA,
+			       "reset RNR backoff timer for peer: %" PRIu64 "\n",
+			       pkt->addr);
+		}
 	}
+
 	if (pkt->send) {
 		ofi_buf_free(pkt->send);
 		pkt->send = NULL;

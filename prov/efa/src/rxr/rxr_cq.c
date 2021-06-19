@@ -84,8 +84,6 @@ int rxr_cq_handle_rx_error(struct rxr_ep *ep, struct rxr_rx_entry *rx_entry,
 {
 	struct fi_cq_err_entry err_entry;
 	struct util_cq *util_cq;
-	struct dlist_entry *tmp;
-	struct rxr_pkt_entry *pkt_entry;
 
 	memset(&err_entry, 0, sizeof(err_entry));
 
@@ -116,11 +114,6 @@ int rxr_cq_handle_rx_error(struct rxr_ep *ep, struct rxr_rx_entry *rx_entry,
 			rx_entry->state);
 		assert(0 && "rx_entry unknown state");
 	}
-
-	dlist_foreach_container_safe(&rx_entry->queued_pkts,
-				     struct rxr_pkt_entry,
-				     pkt_entry, entry, tmp)
-		rxr_pkt_entry_release_tx(ep, pkt_entry);
 
 	if (rx_entry->unexp_pkt) {
 		rxr_pkt_entry_release_rx(ep, rx_entry->unexp_pkt);
@@ -171,8 +164,6 @@ int rxr_cq_handle_tx_error(struct rxr_ep *ep, struct rxr_tx_entry *tx_entry,
 	struct fi_cq_err_entry err_entry;
 	struct util_cq *util_cq;
 	uint32_t api_version;
-	struct dlist_entry *tmp;
-	struct rxr_pkt_entry *pkt_entry;
 
 	memset(&err_entry, 0, sizeof(err_entry));
 
@@ -202,11 +193,6 @@ int rxr_cq_handle_tx_error(struct rxr_ep *ep, struct rxr_tx_entry *tx_entry,
 		assert(0 && "tx_entry unknown state");
 	}
 
-	dlist_foreach_container_safe(&tx_entry->queued_pkts,
-				     struct rxr_pkt_entry,
-				     pkt_entry, entry, tmp)
-		rxr_pkt_entry_release_tx(ep, pkt_entry);
-
 	err_entry.flags = tx_entry->cq_entry.flags;
 	err_entry.op_context = tx_entry->cq_entry.op_context;
 	err_entry.buf = tx_entry->cq_entry.buf;
@@ -231,12 +217,15 @@ int rxr_cq_handle_tx_error(struct rxr_ep *ep, struct rxr_tx_entry *tx_entry,
 	return ofi_cq_write_error(util_cq, &err_entry);
 }
 
-/*
+/**
+ * @queue a packet that encountered RNR
+ *
+ * the packet will be put into rxr
  * Queue a packet on the appropriate list when an RNR error is received.
  */
-static inline void rxr_cq_queue_pkt(struct rxr_ep *ep,
-				    struct dlist_entry *list,
-				    struct rxr_pkt_entry *pkt_entry)
+static inline
+void rxr_cq_queue_rnr_pkt(struct rxr_ep *ep,
+			  struct rxr_pkt_entry *pkt_entry)
 {
 	struct rdm_peer *peer;
 
@@ -254,23 +243,20 @@ static inline void rxr_cq_queue_pkt(struct rxr_ep *ep,
 	 */
 	if (pkt_entry->state != RXR_PKT_ENTRY_RNR_RETRANSMIT) {
 		pkt_entry->state = RXR_PKT_ENTRY_RNR_RETRANSMIT;
-		peer->rnr_queued_pkt_cnt++;
-		goto queue_pkt;
+		dlist_insert_tail(&pkt_entry->entry, &peer->rnr_queued_pkts);
 	}
 
-	/*
-	 * Otherwise, increase the backoff if the peer is already not in
-	 * backoff. Reset the timer when starting backoff or if another RNR for
-	 * a retransmitted packet is received while waiting for the timer to
-	 * expire.
-	 */
-	peer->rnr_timestamp = ofi_gettime_us();
-	if (peer->flags & RXR_PEER_IN_BACKOFF)
-		goto queue_pkt;
+	if (!(peer->flags & RXR_PEER_RNR_QUEUED)) {
+		peer->flags |= RXR_PEER_RNR_QUEUED;
+		dlist_insert_tail(&peer->rnr_queued_entry, &ep->rnr_queued_peer_list);
+	} else if (!(peer->flags & RXR_PEER_IN_BACKOFF)) {
+		/* This peer is already is ep->rnr_queued_peer_list, which means it has encountered
+		 * RNR more than once.
+		 * It is not in backoff yet, so initialize the BACKOFF for it.
+		 */
+		peer->flags |= RXR_PEER_IN_BACKOFF;
+		peer->rnr_timestamp = ofi_gettime_us();
 
-	peer->flags |= RXR_PEER_IN_BACKOFF;
-
-	if (!peer->rnr_timeout) {
 		if (rxr_env.initial_rnr_timeout)
 			peer->rnr_timeout = rxr_env.initial_rnr_timeout;
 		else
@@ -280,30 +266,20 @@ static inline void rxr_cq_queue_pkt(struct rxr_ep *ep,
 
 		FI_DBG(&rxr_prov, FI_LOG_EP_DATA,
 		       "initializing backoff timeout for peer: %" PRIu64
-		       " timeout: %ld rnr_queued_pkts: %d\n",
-		       pkt_entry->addr, peer->rnr_timeout,
-		       peer->rnr_queued_pkt_cnt);
+		       " timeout: %ld",
+		       pkt_entry->addr, peer->rnr_timeout);
 	} else {
-		/* Only backoff once per peer per progress thread loop. */
-		if (!(peer->flags & RXR_PEER_BACKED_OFF)) {
-			peer->flags |= RXR_PEER_BACKED_OFF;
-			peer->rnr_timeout = MIN(rxr_env.max_rnr_timeout,
-						peer->rnr_timeout *2);
-			FI_DBG(&rxr_prov, FI_LOG_EP_DATA,
-			       "increasing backoff for peer: %" PRIu64
-			       " rnr_timeout: %ld rnr_queued_pkts: %d\n",
-			       pkt_entry->addr, peer->rnr_timeout,
-			       peer->rnr_queued_pkt_cnt);
-		}
+		/* This peer has encountered RNR multiple time, each time RNR is encountered
+		 * we double the backoff time (until it reached maximum)
+		 */
+		peer->rnr_timestamp = ofi_gettime_us();
+		peer->rnr_timeout = MIN(rxr_env.max_rnr_timeout,
+					peer->rnr_timeout *2);
+		FI_DBG(&rxr_prov, FI_LOG_EP_DATA,
+		       "increasing backoff for peer: %" PRIu64
+		       " rnr_timeout: %ld\n",
+		       pkt_entry->addr, peer->rnr_timeout);
 	}
-	dlist_insert_tail(&peer->rnr_entry,
-			  &ep->peer_backoff_list);
-
-queue_pkt:
-#if ENABLE_DEBUG
-	dlist_remove(&pkt_entry->dbg_entry);
-#endif
-	dlist_insert_tail(&pkt_entry->entry, list);
 }
 
 int rxr_cq_handle_error(struct rxr_ep *ep, ssize_t prov_errno, struct rxr_pkt_entry *pkt_entry)
@@ -360,17 +336,7 @@ int rxr_cq_handle_error(struct rxr_ep *ep, ssize_t prov_errno, struct rxr_pkt_en
 			return ret;
 		}
 
-		rxr_cq_queue_pkt(ep, &tx_entry->queued_pkts, pkt_entry);
-		if (tx_entry->state == RXR_TX_SEND) {
-			dlist_remove(&tx_entry->entry);
-			tx_entry->state = RXR_TX_QUEUED_DATA_RNR;
-			dlist_insert_tail(&tx_entry->queued_entry,
-					  &ep->tx_entry_queued_list);
-		} else if (tx_entry->state == RXR_TX_REQ) {
-			tx_entry->state = RXR_TX_QUEUED_REQ_RNR;
-			dlist_insert_tail(&tx_entry->queued_entry,
-					  &ep->tx_entry_queued_list);
-		}
+		rxr_cq_queue_rnr_pkt(ep, pkt_entry);
 		return 0;
 	} else if (RXR_GET_X_ENTRY_TYPE(pkt_entry) == RXR_RX_ENTRY) {
 		rx_entry = (struct rxr_rx_entry *)pkt_entry->x_entry;
@@ -380,12 +346,7 @@ int rxr_cq_handle_error(struct rxr_ep *ep, ssize_t prov_errno, struct rxr_pkt_en
 			rxr_pkt_entry_release_tx(ep, pkt_entry);
 			return ret;
 		}
-		rxr_cq_queue_pkt(ep, &rx_entry->queued_pkts, pkt_entry);
-		if (rx_entry->state == RXR_RX_RECV) {
-			rx_entry->state = RXR_RX_QUEUED_CTS_RNR;
-			dlist_insert_tail(&rx_entry->queued_entry,
-					  &ep->rx_entry_queued_list);
-		}
+		rxr_cq_queue_rnr_pkt(ep, pkt_entry);
 		return 0;
 	} else if (RXR_GET_X_ENTRY_TYPE(pkt_entry) == RXR_READ_ENTRY) {
 		read_entry = (struct rxr_read_entry *)pkt_entry->x_entry;

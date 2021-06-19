@@ -291,8 +291,12 @@ enum rxr_rx_comm_type {
 #define RXR_PEER_REQ_SENT BIT_ULL(0) /* sent a REQ to the peer, peer should send a handshake back */
 #define RXR_PEER_HANDSHAKE_SENT BIT_ULL(1) /* a handshake packet has been sent to a peer */
 #define RXR_PEER_HANDSHAKE_RECEIVED BIT_ULL(2)
-#define RXR_PEER_IN_BACKOFF BIT_ULL(3) /* peer is in backoff, not allowed to send */
-#define RXR_PEER_BACKED_OFF BIT_ULL(4) /* peer backoff was increased during this loop of the progress engine */
+/* peer encountered mulitple RNR event, and is put backoff, ep will not send
+ * packet to a peer with this flag. This flag will be unset when backoff period finish
+ * a send completion was recevied for this peer */
+#define RXR_PEER_IN_BACKOFF            BIT_ULL(3)
+/* The peer encountered RNR, and is in ep->rnr_queued_peer_list, and its has entry in peer->rnr_queued_pkts */
+#define RXR_PEER_RNR_QUEUED	       BIT_ULL(4)
 /*
  * FI_EAGAIN error was encountered when sending handsahke to this peer,
  * the peer was put in rxr_ep->handshake_queued_peer_list.
@@ -328,7 +332,8 @@ struct rdm_peer {
 	uint64_t rnr_timestamp;		/* timestamp for RNR backoff tracking */
 	int rnr_queued_pkt_cnt;		/* queued RNR packet count */
 	uint64_t rnr_timeout;		/* RNR timeout value in us */
-	struct dlist_entry rnr_entry;	/* linked to rxr_ep peer_backoff_list */
+	struct dlist_entry rnr_queued_entry; /* linked to rxr_ep->rnr_queued_peer_list */
+	struct dlist_entry rnr_queued_pkts; /* a list of packets to this peer that encountered RNR */
 	struct dlist_entry handshake_queued_entry; /* linked with rxr_ep->handshake_queued_peer_list */
 	struct dlist_entry rx_unexp_list; /* a list of unexpected untagged rx_entry for this peer */
 	struct dlist_entry rx_unexp_tagged_list; /* a list of unexpected tagged rx_entry for this peer */
@@ -420,9 +425,6 @@ struct rxr_rx_entry {
 	/* queued_entry is linked with rx_queued_ctrl_list in rxr_ep */
 	struct dlist_entry queued_entry;
 
-	/* Queued packets due to TX queue full or RNR backoff */
-	struct dlist_entry queued_pkts;
-
 	/*
 	 * A list of rx_entries tracking FI_MULTI_RECV buffers. An rx_entry of
 	 * type RXR_MULTI_RECV_POSTED that was created when the multi-recv
@@ -506,9 +508,6 @@ struct rxr_tx_entry {
 
 	/* queued_entry is linked with tx_queued_ctrl_list in rxr_ep */
 	struct dlist_entry queued_entry;
-
-	/* Queued packets due to TX queue full or RNR backoff */
-	struct dlist_entry queued_pkts;
 
 #if ENABLE_DEBUG
 	/* linked with tx_entry_list in rxr_ep */
@@ -672,8 +671,8 @@ struct rxr_ep {
 	struct dlist_entry tx_pending_list;
 	/* read entries with data to be read */
 	struct dlist_entry read_pending_list;
-	/* rxr_peer entries that are in backoff due to RNR */
-	struct dlist_entry peer_backoff_list;
+	/* rxr_peer entries that has RNR packets */
+	struct dlist_entry rnr_queued_peer_list;
 	/* rxr_peer entries that will retry posting handshake pkt */
 	struct dlist_entry handshake_queued_peer_list;
 
@@ -785,25 +784,15 @@ struct rxr_rx_entry *rxr_ep_alloc_rx_entry(struct rxr_ep *ep,
 static inline void rxr_release_rx_entry(struct rxr_ep *ep,
 					struct rxr_rx_entry *rx_entry)
 {
-	struct rxr_pkt_entry *pkt_entry;
-	struct dlist_entry *tmp;
-
 	if (rx_entry->peer)
 		ofi_atomic_dec32(&rx_entry->peer->use_cnt);
 
 #if ENABLE_DEBUG
 	dlist_remove(&rx_entry->rx_entry_entry);
 #endif
-	if (!dlist_empty(&rx_entry->queued_pkts)) {
-		dlist_foreach_container_safe(&rx_entry->queued_pkts,
-					     struct rxr_pkt_entry,
-					     pkt_entry, entry, tmp) {
-			rxr_pkt_entry_release_tx(ep, pkt_entry);
-		}
+
+	if (rx_entry->state == RXR_RX_QUEUED_CTRL)
 		dlist_remove(&rx_entry->queued_entry);
-	} else if (rx_entry->state == RXR_RX_QUEUED_CTRL) {
-		dlist_remove(&rx_entry->queued_entry);
-	}
 
 #ifdef ENABLE_EFA_POISONING
 	rxr_poison_mem_region((uint32_t *)rx_entry,
