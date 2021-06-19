@@ -421,7 +421,6 @@ void rxr_pkt_handle_rma_read_completion(struct rxr_ep *ep,
 	struct rxr_read_entry *read_entry;
 	struct rxr_rma_context_pkt *rma_context_pkt;
 	enum rxr_read_context_type read_context_type;
-	struct rdm_peer *peer;
 	int inject;
 	size_t data_size;
 	ssize_t ret;
@@ -454,8 +453,7 @@ void rxr_pkt_handle_rma_read_completion(struct rxr_ep *ep,
 			inject = (read_entry->lower_ep_type == SHM_EP);
 			ret = rxr_pkt_post_ctrl_or_queue(ep, RXR_RX_ENTRY, rx_entry, RXR_EOR_PKT, inject);
 			if (OFI_UNLIKELY(ret)) {
-				if (rxr_cq_handle_rx_error(ep, rx_entry, ret))
-					assert(0 && "failed to write err cq entry");
+				rxr_cq_write_rx_error(ep, rx_entry, -ret, -ret);
 				rxr_release_rx_entry(ep, rx_entry);
 			}
 		} else {
