@@ -232,12 +232,9 @@ void rxr_cq_queue_rnr_pkt(struct rxr_ep *ep,
 	peer = rxr_ep_get_peer(ep, pkt_entry->addr);
 	assert(peer);
 
-	static int printed_queued = 0;
-
-	if (!printed_queued) {
-		fprintf(stderr, "queue pkt\n");
-		printed_queued = 1;
-	}
+#if ENABLE_DEBUG
+	dlist_remove(&pkt_entry->dbg_entry);
+#endif
 	/*
 	 * Queue the packet if it has not been retransmitted yet.
 	 */
@@ -263,7 +260,6 @@ void rxr_cq_queue_rnr_pkt(struct rxr_ep *ep,
 			peer->rnr_timeout = MAX(RXR_RAND_MIN_TIMEOUT,
 						rand() %
 						RXR_RAND_MAX_TIMEOUT);
-
 		FI_DBG(&rxr_prov, FI_LOG_EP_DATA,
 		       "initializing backoff timeout for peer: %" PRIu64
 		       " timeout: %ld",
@@ -275,6 +271,7 @@ void rxr_cq_queue_rnr_pkt(struct rxr_ep *ep,
 		peer->rnr_timestamp = ofi_gettime_us();
 		peer->rnr_timeout = MIN(rxr_env.max_rnr_timeout,
 					peer->rnr_timeout *2);
+
 		FI_DBG(&rxr_prov, FI_LOG_EP_DATA,
 		       "increasing backoff for peer: %" PRIu64
 		       " rnr_timeout: %ld\n",
