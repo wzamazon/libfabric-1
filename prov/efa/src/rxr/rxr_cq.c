@@ -320,6 +320,7 @@ int rxr_cq_handle_error(struct rxr_ep *ep, ssize_t prov_errno, struct rxr_pkt_en
 	peer = rxr_ep_get_peer(ep, pkt_entry->addr);
 	assert(peer);
 	if (rxr_get_base_hdr(pkt_entry->pkt)->type == RXR_HANDSHAKE_PKT) {
+		fprintf(stderr, "ignoring handshake RNR\n");
 		FI_WARN(&rxr_prov, FI_LOG_CQ,
 			"Squelching error CQE for RXR_HANDSHAKE_PKT\n");
 		rxr_ep_dec_tx_pending(ep, peer, 1);
