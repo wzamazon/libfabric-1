@@ -81,7 +81,7 @@ struct rxr_env rxr_env = {
 	 * retry. Just reset RNR firmware retry to EFA_RNR_INFINITE_RETRY
 	 * to be safe, while we are working on a fix.
 	 */
-	.rnr_retry = EFA_RNR_INFINITE_RETRY,
+	.rnr_retry = 3,
 };
 
 /* @brief Read and store the FI_EFA_* environment variables.
