@@ -235,21 +235,20 @@ void rxr_cq_queue_rnr_pkt(struct rxr_ep *ep,
 #if ENABLE_DEBUG
 	dlist_remove(&pkt_entry->dbg_entry);
 #endif
-	/*
-	 * Queue the packet if it has not been retransmitted yet.
-	 */
-	if (pkt_entry->state != RXR_PKT_ENTRY_RNR_RETRANSMIT) {
-		pkt_entry->state = RXR_PKT_ENTRY_RNR_RETRANSMIT;
-		dlist_insert_tail(&pkt_entry->entry, &peer->rnr_queued_pkts);
-	}
-
+	dlist_insert_tail(&pkt_entry->entry, &peer->rnr_queued_pkts);
 	if (!(peer->flags & RXR_PEER_RNR_QUEUED)) {
 		peer->flags |= RXR_PEER_RNR_QUEUED;
 		dlist_insert_tail(&peer->rnr_queued_entry, &ep->rnr_queued_peer_list);
+		//fprintf(stderr, "queue peer: %p\n", peer);
+	}
+
+	if (pkt_entry->state != RXR_PKT_ENTRY_RNR_RETRANSMIT) {
+		/* this is the first time this pkt_entry encountered RNR */
+		pkt_entry->state = RXR_PKT_ENTRY_RNR_RETRANSMIT;
 	} else if (!(peer->flags & RXR_PEER_IN_BACKOFF)) {
-		/* This peer is already is ep->rnr_queued_peer_list, which means it has encountered
-		 * RNR more than once.
-		 * It is not in backoff yet, so initialize the BACKOFF for it.
+		/* This is the 2nd time this packet entry encountered RNR,
+		 * we put the peer into backoff mode. In this mode,
+		 * ep will not send packets to this peer.
 		 */
 		peer->flags |= RXR_PEER_IN_BACKOFF;
 		peer->rnr_timestamp = ofi_gettime_us();
@@ -289,21 +288,25 @@ int rxr_cq_handle_error(struct rxr_ep *ep, ssize_t prov_errno, struct rxr_pkt_en
 
 	if (!pkt_entry)
 		goto write_eq_err;
-	/*
-	 * A handshake send could fail at the core provider if the peer endpoint
-	 * is shutdown soon after it receives a send completion for the REQ
-	 * packet that included src_address. The handshake itself is irrelevant if
-	 * that happens, so just squelch this error entry and move on without
-	 * writing an error completion or event to the application.
-	 */
+
 	peer = rxr_ep_get_peer(ep, pkt_entry->addr);
 	assert(peer);
 	if (rxr_get_base_hdr(pkt_entry->pkt)->type == RXR_HANDSHAKE_PKT) {
-		fprintf(stderr, "ignoring handshake RNR\n");
-		FI_WARN(&rxr_prov, FI_LOG_CQ,
-			"Squelching error CQE for RXR_HANDSHAKE_PKT\n");
-		rxr_ep_dec_tx_pending(ep, peer, 1);
-		rxr_pkt_entry_release_tx(ep, pkt_entry);
+		if (prov_errno == IBV_WC_RNR_RETRY_EXC_ERR) {
+			fprintf(stderr, "queue handshake rnr packet %p\n", pkt_entry);
+			rxr_cq_queue_rnr_pkt(ep, pkt_entry);
+		} else if (prov_errno == IBV_WC_REM_INV_RD_REQ_ERR) {
+			/* the peer has been destroyed. Because handshake does not
+			 * carry any application data, it is safe to ignore this error
+			 * completion.
+			 */
+			rxr_ep_dec_tx_pending(ep, peer, 1);
+			rxr_pkt_entry_release_tx(ep, pkt_entry);
+		} else {
+			rxr_ep_dec_tx_pending(ep, peer, 1);
+			rxr_pkt_entry_release_tx(ep, pkt_entry);
+			efa_eq_write_error(&ep->util_ep, FI_EIO, prov_errno);
+		}
 		return 0;
 	}
 
