@@ -243,6 +243,12 @@ static inline void rxr_cq_queue_pkt(struct rxr_ep *ep,
 	peer = rxr_ep_get_peer(ep, pkt_entry->addr);
 	assert(peer);
 
+	static int printed_queued = 0;
+
+	if (!printed_queued) {
+		fprintf(stderr, "queue pkt\n");
+		printed_queued = 1;
+	}
 	/*
 	 * Queue the packet if it has not been retransmitted yet.
 	 */
