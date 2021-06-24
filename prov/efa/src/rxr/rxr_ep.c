@@ -911,6 +911,7 @@ out:
 		break;
 	}
 
+	fprintf(stderr, "main + rx peer list + rnr\n");
 	return ret;
 }
 
