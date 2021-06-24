@@ -799,45 +799,60 @@ struct rxr_rx_entry *rxr_msg_split_rx_entry(struct rxr_ep *ep,
  * @param[in]	tag	tag of the unexpected message, used only if op is ofi_op_tagged.
  * @param[in]	ignore	mask of the tag, used only if op is ofi_op_tagged.
  * @param[in]	op	either ofi_op_tagged or ofi_op_msg.
+ * @param[in]	claim   whether to claim the rx_entry, e.g. remove it from unexpected queue.
  * @return	If an unexpected rx_entry was found, return the pointer.
  * 		Otherwise, return NULL.
  */
 static inline
 struct rxr_rx_entry *rxr_msg_find_unexp_rx_entry(struct rxr_ep *ep, fi_addr_t addr,
-						 int64_t tag, uint64_t ignore, uint32_t op)
+						 int64_t tag, uint64_t ignore, uint32_t op,
+						 bool claim)
 {
 	struct rxr_match_info match_info;
+	struct rxr_rx_entry *rx_entry;
 	struct dlist_entry *match;
 	struct rdm_peer *peer;
 
 	peer = (ep->util_ep.caps & FI_DIRECTED_RECV) ? rxr_ep_get_peer(ep, addr) : NULL;
 
-	if (op == ofi_op_msg) {
+	switch(op) {
+	case ofi_op_msg:
 		if (peer) {
 			match = dlist_empty(&peer->rx_unexp_list) ? NULL : peer->rx_unexp_list.next;
-			return match ? container_of(match, struct rxr_rx_entry, peer_unexp_entry) : NULL;
+			rx_entry = match ? container_of(match, struct rxr_rx_entry, peer_unexp_entry) : NULL;
+		} else {
+			match = dlist_empty(&ep->rx_unexp_list) ? NULL : ep->rx_unexp_list.next;
+			rx_entry = match ? container_of(match, struct rxr_rx_entry, entry) : NULL;
 		}
+		break;
+	case ofi_op_tagged:
+		match_info.tag = tag;
+		match_info.ignore = ignore;
 
-		match = dlist_empty(&ep->rx_unexp_list) ? NULL : ep->rx_unexp_list.next;
-		return match ? container_of(match, struct rxr_rx_entry, entry) : NULL;
+		if (peer) {
+			match = dlist_find_first_match(&peer->rx_unexp_tagged_list,
+			                               rxr_msg_match_peer_unexp_by_tag,
+						       (void *)&match_info);
+			rx_entry = match ? container_of(match, struct rxr_rx_entry, peer_unexp_entry) : NULL;
+		} else {
+			match = dlist_find_first_match(&ep->rx_unexp_tagged_list,
+						       rxr_msg_match_ep_unexp_by_tag,
+						       (void *)&match_info);
+
+			rx_entry = match ? container_of(match, struct rxr_rx_entry, entry) : NULL;
+		}
+		break;
+	default:
+		FI_WARN(&rxr_prov, FI_LOG_CQ, "Error: wrong op in rxr_msg_find_unexp_rx_entry()");
+		abort();
 	}
 
-	assert(op == ofi_op_tagged);
-	match_info.tag = tag;
-	match_info.ignore = ignore;
-
-	if (peer) {
-		match = dlist_find_first_match(&peer->rx_unexp_tagged_list,
-		                               rxr_msg_match_peer_unexp_by_tag,
-					       (void *)&match_info);
-		return match ? container_of(match, struct rxr_rx_entry, peer_unexp_entry) : NULL;
+	if (rx_entry && claim) {
+		dlist_remove(&rx_entry->entry);
+		dlist_remove(&rx_entry->peer_unexp_entry);
 	}
 
-	match = dlist_find_first_match(&peer->rx_unexp_tagged_list,
-				       rxr_msg_match_ep_unexp_by_tag,
-				       (void *)&match_info);
-
-	return match ? container_of(match, struct rxr_rx_entry, entry) : NULL;
+	return rx_entry;
 }
 
 /*
@@ -851,13 +866,12 @@ int rxr_msg_proc_unexp_msg_list(struct rxr_ep *ep, const struct fi_msg *msg,
 {
 	struct rxr_rx_entry *rx_entry;
 	int ret;
+	bool claim;
 
-	rx_entry = rxr_msg_find_unexp_rx_entry(ep, msg->addr, tag, ignore, op);
+	claim = true;
+	rx_entry = rxr_msg_find_unexp_rx_entry(ep, msg->addr, tag, ignore, op, claim);
 	if (!rx_entry)
 		return -FI_ENOMSG;
-
-	dlist_remove(&rx_entry->entry);
-	dlist_remove(&rx_entry->peer_unexp_entry);
 
 	/*
 	 * Initialize the matched entry as a multi-recv consumer if the posted
@@ -1160,6 +1174,7 @@ ssize_t rxr_msg_peek_trecv(struct fid_ep *ep_fid,
 	struct rxr_pkt_entry *pkt_entry;
 	size_t data_len;
 	int64_t tag;
+	bool claim;
 
 	ep = container_of(ep_fid, struct rxr_ep, util_ep.ep_fid.fid);
 
@@ -1167,7 +1182,9 @@ ssize_t rxr_msg_peek_trecv(struct fid_ep *ep_fid,
 
 	rxr_ep_progress_internal(ep);
 
-	rx_entry = rxr_msg_find_unexp_rx_entry(ep, msg->addr, msg->tag, msg->ignore, ofi_op_tagged);
+	claim = (flags & (FI_CLAIM | FI_DISCARD));
+	rx_entry = rxr_msg_find_unexp_rx_entry(ep, msg->addr, msg->tag, msg->ignore, ofi_op_tagged,
+					       claim);
 	if (!rx_entry) {
 		FI_DBG(&rxr_prov, FI_LOG_EP_CTRL,
 		       "Message not found addr: %" PRIu64
@@ -1181,12 +1198,7 @@ ssize_t rxr_msg_peek_trecv(struct fid_ep *ep_fid,
 	context = (struct fi_context *)msg->context;
 	if (flags & FI_CLAIM) {
 		context->internal[0] = rx_entry;
-		dlist_remove(&rx_entry->entry);
-		dlist_remove(&rx_entry->peer_unexp_entry);
 	} else if (flags & FI_DISCARD) {
-		dlist_remove(&rx_entry->entry);
-		dlist_remove(&rx_entry->peer_unexp_entry);
-
 		ret = rxr_msg_discard_trecv(ep, rx_entry, msg, flags);
 		if (ret)
 			goto out;
