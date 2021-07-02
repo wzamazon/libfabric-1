@@ -229,8 +229,8 @@ struct rxr_env {
 	size_t rx_iov_limit;
 	int rx_copy_unexp;
 	int rx_copy_ooo;
-	int max_timeout;
-	int timeout_interval;
+	int rnr_backoff_max_wait_time; /* unit is us */
+	int rnr_backoff_initial_wait_time; /* unit is us */
 	size_t efa_cq_read_size;
 	size_t shm_cq_read_size;
 	size_t efa_max_medium_msg_size;
@@ -320,10 +320,10 @@ struct rdm_peer {
 	size_t tx_pending;		/* tracks pending tx ops to this peer */
 	uint16_t tx_credits;		/* available send credits */
 	uint16_t rx_credits;		/* available credits to allocate */
-	uint64_t rnr_ts;		/* timestamp for RNR backoff tracking */
+	uint64_t rnr_backoff_begin_ts;	/* timestamp for RNR backoff period begin */
+	uint64_t rnr_backoff_wait_time;	/* how long the RNR backoff period last */
 	int rnr_queued_pkt_cnt;		/* queued RNR packet count */
-	int timeout_interval;		/* initial RNR timeout value */
-	struct dlist_entry rnr_entry;	/* linked to rxr_ep peer_backoff_list */
+	struct dlist_entry rnr_backoff_entry;	/* linked to rxr_ep peer_backoff_list */
 	struct dlist_entry handshake_queued_entry; /* linked with rxr_ep->handshake_queued_peer_list */
 	struct dlist_entry rx_unexp_list; /* a list of unexpected untagged rx_entry for this peer */
 	struct dlist_entry rx_unexp_tagged_list; /* a list of unexpected tagged rx_entry for this peer */
