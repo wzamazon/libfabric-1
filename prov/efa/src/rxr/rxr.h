@@ -323,7 +323,6 @@ struct rdm_peer {
 	uint64_t rnr_ts;		/* timestamp for RNR backoff tracking */
 	int rnr_queued_pkt_cnt;		/* queued RNR packet count */
 	int timeout_interval;		/* initial RNR timeout value */
-	int rnr_timeout_exp;		/* RNR timeout exponentation calc val */
 	struct dlist_entry rnr_entry;	/* linked to rxr_ep peer_backoff_list */
 	struct dlist_entry handshake_queued_entry; /* linked with rxr_ep->handshake_queued_peer_list */
 	struct dlist_entry rx_unexp_list; /* a list of unexpected untagged rx_entry for this peer */
@@ -1027,15 +1026,6 @@ static inline void rxr_rm_tx_cq_check(struct rxr_ep *ep, struct util_cq *tx_cq)
 	else
 		ep->rm_full &= ~RXR_RM_TX_CQ_FULL;
 	fastlock_release(&tx_cq->cq_lock);
-}
-
-static inline bool rxr_peer_timeout_expired(struct rxr_ep *ep,
-					    struct rdm_peer *peer,
-					    uint64_t ts)
-{
-	return (ts >= (peer->rnr_ts + MIN(rxr_env.max_timeout,
-					  peer->timeout_interval *
-					  (1 << peer->rnr_timeout_exp))));
 }
 
 /* Performance counter declarations */
