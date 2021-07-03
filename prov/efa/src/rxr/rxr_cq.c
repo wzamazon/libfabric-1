@@ -351,7 +351,9 @@ int rxr_cq_handle_error(struct rxr_ep *ep, ssize_t prov_errno, struct rxr_pkt_en
 	peer = rxr_ep_get_peer(ep, pkt_entry->addr);
 	assert(peer);
 	if (rxr_get_base_hdr(pkt_entry->pkt)->type == RXR_HANDSHAKE_PKT) {
-		rxr_ep_dec_tx_pending(ep, peer, 1);
+#if ENABLE_DEBUG
+		ep->failed_send_comps++;
+#endif
 		rxr_pkt_entry_release_tx(ep, pkt_entry);
 		if (prov_errno == IBV_WC_RNR_RETRY_EXC_ERR) {
 			/* Add peer to handshake_queued_peer_list for retry later
@@ -390,8 +392,12 @@ int rxr_cq_handle_error(struct rxr_ep *ep, ssize_t prov_errno, struct rxr_pkt_en
 	 * packet. Decrement the tx_pending counter and fall through to
 	 * the rx or tx entry handlers.
 	 */
-	if (!peer->is_local)
-		rxr_ep_dec_tx_pending(ep, peer, 1);
+	if (!peer->is_local) {
+#if ENABLE_DEBUG
+		ep->failed_send_comps++;
+#endif
+	}
+
 	if (RXR_GET_X_ENTRY_TYPE(pkt_entry) == RXR_TX_ENTRY) {
 		tx_entry = (struct rxr_tx_entry *)pkt_entry->x_entry;
 		if (prov_errno != IBV_WC_RNR_RETRY_EXC_ERR ||

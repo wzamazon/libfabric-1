@@ -678,6 +678,18 @@ void rxr_pkt_handle_send_completion(struct rxr_ep *ep, struct rxr_pkt_entry *pkt
 {
 	struct rdm_peer *peer;
 
+	peer = rxr_ep_get_peer(ep, pkt_entry->addr);
+	if (!peer) {
+		/*
+		 * peer could have been removed because
+		 * a new peer with same gid+qpn was inserted
+		 * to av. In this case, ignore this packet.
+		 */
+		FI_WARN(&rxr_prov, FI_LOG_CQ, "ignoring send completion of a packet to a removed peer.\n");
+		rxr_pkt_entry_release_tx(ep, pkt_entry);
+		return;
+	}
+
 	switch (rxr_get_base_hdr(pkt_entry->pkt)->type) {
 	case RXR_HANDSHAKE_PKT:
 		break;
@@ -772,10 +784,6 @@ void rxr_pkt_handle_send_completion(struct rxr_ep *ep, struct rxr_pkt_entry *pkt
 		return;
 	}
 
-	peer = rxr_ep_get_peer(ep, pkt_entry->addr);
-	assert(peer);
-	if (!peer->is_local)
-		rxr_ep_dec_tx_pending(ep, peer, 0);
 	rxr_pkt_entry_release_tx(ep, pkt_entry);
 }
 
