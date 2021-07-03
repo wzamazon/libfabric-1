@@ -1070,6 +1070,75 @@ void rxr_pkt_proc_received(struct rxr_ep *ep, struct rxr_pkt_entry *pkt_entry)
 	}
 }
 
+/**
+ * @brief determine whether a received packet should be ignored
+ * If the packet is from a newly created peer (same gid+qpn, different qkey),
+ * This function will insert the new address to address vector, and set
+ * pkt_entry->addr accordingly.
+ *
+ * @param[in]	ep		endpoint
+ * @param[in]	pkt_entry	received packet entry
+ * @return	a boolean value indicating whether this packet should be ignored
+ */
+static inline
+bool rxr_pkt_should_ignore_received(struct rxr_ep *ep,
+				    struct rxr_pkt_entry *pkt_entry)
+{
+	struct rdm_peer *peer;
+	struct efa_ep_addr *peer_addr; /* current peer address */
+	struct efa_ep_addr *sender_addr; /* peer address in packet header */
+	struct rxr_opt_connid_hdr *connid_hdr;
+
+	peer = rxr_ep_get_peer(ep, pkt_entry->addr);
+	peer_addr = rxr_peer_raw_addr(ep, pkt_entry->addr);
+
+	if (rxr_get_base_hdr(pkt_entry->pkt)->type >= RXR_REQ_PKT_BEGIN &&
+	    rxr_pkt_req_raw_addr(pkt_entry)) {
+		sender_addr = rxr_pkt_req_raw_addr(pkt_entry);
+		assert(sender_addr);
+		if (peer && sender_addr->qkey == peer->prev_qkey) {
+			/* the packet is from a destroyed peer, because its qkey matches the previous
+			 * peer's qkey. Therefore it should be ignored */
+			FI_WARN(&rxr_prov, FI_LOG_CQ, "Ignoring a packet from a destroyed peer!\n"
+				"packet sender qkey: %d matches peer->prev_qkey: %d\n",
+				sender_addr->qkey, peer->prev_qkey);
+			return true;
+		}
+
+		if (!peer || sender_addr->qkey != peer_addr->qkey) {
+			/* If peer is NULL, pkt_entry->addr must be FI_ADDR_NOTAVAIL, which means
+			 * this packet is from a newly created peer and we have never received from this GID+QPN before.
+			 *
+			 * If peer is not NULL and qkey does not match, this packet is also from a newly created peer,
+			 * but the old peer with same GID+QPN has been destroyed.
+			 *
+			 * Either way, the new address need to be inserted to address vector, and
+			 * this packet cannot be ignored.
+			 */
+			pkt_entry->addr = rxr_pkt_insert_addr(ep, pkt_entry, sender_addr);
+		}
+
+		return false;
+	}
+
+	connid_hdr = rxr_pkt_connid_hdr(pkt_entry);
+	if (connid_hdr && connid_hdr->sender_id != peer_addr->qkey) {
+		FI_WARN(&rxr_prov, FI_LOG_CQ, "Ignoring a packet from a destroyed peer!\n"
+			"packet sender connid: %d currrent peer qkey: %d\n",
+			connid_hdr->sender_id, peer_addr->qkey);
+		return true;
+	}
+
+	if (pkt_entry->addr == FI_ADDR_NOTAVAIL) {
+		/* In this case, this packet must be from a destroyed peer, because we do not have its address in
+		 * address vector. Thus this packet needs to be ignored */
+		FI_WARN(&rxr_prov, FI_LOG_CQ, "Ignoring a packet from a destroyed peer!\n");
+		return true;
+	}
+
+	return false;
+}
+
 void rxr_pkt_handle_recv_completion(struct rxr_ep *ep,
 				    struct rxr_pkt_entry *pkt_entry)
 {
@@ -1077,6 +1146,11 @@ void rxr_pkt_handle_recv_completion(struct rxr_ep *ep,
 	struct rdm_peer *peer;
 	struct rxr_base_hdr *base_hdr;
 	struct rxr_rx_entry *zcpy_rx_entry = NULL;
+
+	if (rxr_pkt_should_ignore_received(ep, pkt_entry)) {
+		rxr_pkt_entry_release_rx(ep, pkt_entry);
+		return;
+	}
 
 	base_hdr = rxr_get_base_hdr(pkt_entry->pkt);
 	pkt_type = base_hdr->type;
@@ -1088,19 +1162,6 @@ void rxr_pkt_handle_recv_completion(struct rxr_ep *ep,
 		assert(0 && "invalid REQ packe type");
 		rxr_pkt_handle_recv_error(ep, pkt_entry, FI_EIO, FI_EIO);
 		return;
-	}
-
-	if (pkt_type >= RXR_REQ_PKT_BEGIN) {
-		/*
-		 * as long as the REQ packet contain raw address
-		 * we will need to call insert because it might be a new
-		 * EP with new Q-Key.
-		 */
-		void *raw_addr;
-
-		raw_addr = rxr_pkt_req_raw_addr(pkt_entry);
-		if (OFI_UNLIKELY(raw_addr != NULL))
-			pkt_entry->addr = rxr_pkt_insert_addr(ep, pkt_entry, raw_addr);
 	}
 
 	assert(pkt_entry->addr != FI_ADDR_NOTAVAIL);
