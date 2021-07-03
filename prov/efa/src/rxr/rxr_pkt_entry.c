@@ -106,6 +106,16 @@ void rxr_pkt_entry_release_tx(struct rxr_ep *ep,
 		       "reset backoff timer for peer: %" PRIu64 "\n",
 		       pkt->addr);
 	}
+
+	if (pkt->mr) {
+		ep->tx_pending--;
+		peer = rxr_ep_get_peer(ep, pkt->addr);
+		if (peer) {
+			assert(!peer->is_local);
+			peer->tx_pending--;
+		}
+	}
+
 	if (pkt->send) {
 		ofi_buf_free(pkt->send);
 		pkt->send = NULL;

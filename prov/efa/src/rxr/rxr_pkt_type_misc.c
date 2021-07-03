@@ -421,7 +421,6 @@ void rxr_pkt_handle_rma_read_completion(struct rxr_ep *ep,
 	struct rxr_read_entry *read_entry;
 	struct rxr_rma_context_pkt *rma_context_pkt;
 	enum rxr_read_context_type read_context_type;
-	struct rdm_peer *peer;
 	int inject;
 	size_t data_size;
 	ssize_t ret;
@@ -472,11 +471,6 @@ void rxr_pkt_handle_rma_read_completion(struct rxr_ep *ep,
 	if (read_context_type == RXR_READ_CONTEXT_PKT_ENTRY) {
 		assert(context_pkt_entry->addr == FI_ADDR_NOTAVAIL);
 		ep->tx_pending--;
-	} else {
-		peer = rxr_ep_get_peer(ep, context_pkt_entry->addr);
-		assert(peer);
-		if (!peer->is_local)
-			rxr_ep_dec_tx_pending(ep, peer, 0);
 	}
 }
 
