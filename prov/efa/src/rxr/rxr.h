@@ -325,7 +325,7 @@ struct rdm_peer {
 	uint32_t next_msg_id;		/* sender's view of msg_id */
 	uint32_t flags;
 	uint32_t maxproto;		/* maximum supported protocol version by this peer */
-	uint64_t features[RXR_MAX_NUM_PROTOCOLS]; /* the feature flag for each version */
+	uint64_t exinfo[RXR_MAX_NUM_PROTOCOLS]; /* the feature flag for each version */
 	size_t efa_outstanding_tx_ops;	/* tracks outstanding tx ops to this peer on EFA device */
 	size_t shm_outstanding_tx_ops;  /* tracks outstanding tx ops to this peer on SHM */
 	struct dlist_entry outstanding_tx_pkts; /* a list of outstanding tx pkts to the peer */
@@ -554,8 +554,8 @@ struct rxr_ep {
 	uint8_t core_addr[RXR_MAX_NAME_LENGTH];
 	size_t core_addrlen;
 
-	/* per-version feature flag */
-	uint64_t features[RXR_NUM_PROTOCOL_VERSION];
+	/* per-version extra feature/request flag */
+	uint64_t exinfo[RXR_NUM_PROTOCOL_VERSION];
 
 	/* core provider fid */
 	struct fid_ep *rdm_ep;

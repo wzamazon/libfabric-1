@@ -140,7 +140,7 @@ struct rxr_handshake_hdr {
 	uint16_t flags;
 	/* end of rxr_base_hdr */
 	uint32_t maxproto;
-	uint64_t features[0];
+	uint64_t exinfo[0];
 };
 
 #if defined(static_assert) && defined(__x86_64__)

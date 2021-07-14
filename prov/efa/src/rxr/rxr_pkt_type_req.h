@@ -69,11 +69,11 @@
 #define RXR_REQ_ATOMIC			BIT_ULL(5)
 
 /*
- *     Extra Feature Flags
+ *     Extra Feature/Request Flags
  */
-#define RXR_REQ_FEATURE_RDMA_READ	BIT_ULL(0)
-#define RXR_REQ_FEATURE_DELIVERY_COMPLETE BIT_ULL(1)
-#define RXR_REQ_FEATURE_ZERO_COPY_RECEIVE BIT_ULL(2)
+#define RXR_EXTRA_FEATURE_RDMA_READ		BIT_ULL(0)
+#define RXR_EXTRA_FEATURE_DELIVERY_COMPLETE 	BIT_ULL(1)
+#define RXR_EXTRA_FEATURE_ZERO_COPY_RECEIVE 	BIT_ULL(2)
 
 /*
  *     Utility struct and functions for

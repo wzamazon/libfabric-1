@@ -58,7 +58,7 @@ ssize_t rxr_pkt_init_handshake(struct rxr_ep *ep,
 	handshake_hdr->version = RXR_BASE_PROTOCOL_VERSION;
 	handshake_hdr->flags = 0;
 	handshake_hdr->maxproto = RXR_CUR_PROTOCOL_VERSION;
-	memcpy(handshake_hdr->features, ep->features,
+	memcpy(handshake_hdr->exinfo, ep->exinfo,
 	       RXR_NUM_PROTOCOL_VERSION * sizeof(uint64_t));
 
 	pkt_entry->pkt_size = sizeof(struct rxr_handshake_hdr)
@@ -162,7 +162,7 @@ void rxr_pkt_handle_handshake_recv(struct rxr_ep *ep,
 	handshake_pkt = (struct rxr_handshake_hdr *)pkt_entry->pkt;
 
 	peer->maxproto = handshake_pkt->maxproto;
-	memcpy(peer->features, handshake_pkt->features,
+	memcpy(peer->exinfo, handshake_pkt->exinfo,
 	       (handshake_pkt->maxproto - RXR_BASE_PROTOCOL_VERSION + 1) * sizeof(uint64_t));
 	peer->flags |= RXR_PEER_HANDSHAKE_RECEIVED;
 	FI_DBG(&rxr_prov, FI_LOG_CQ,
