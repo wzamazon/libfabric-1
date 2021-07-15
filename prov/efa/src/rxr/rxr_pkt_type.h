@@ -389,23 +389,19 @@ struct rxr_atomrsp_hdr {
 	uint32_t rx_id;
 	uint32_t tx_id;
 	uint64_t seg_size;
+	struct rxr_opt_connid_hdr connid_hdr[0];
 };
 
 #if defined(static_assert) && defined(__x86_64__)
 static_assert(sizeof(struct rxr_atomrsp_hdr) == 24, "rxr_atomrsp_hdr check");
 #endif
 
-#define RXR_ATOMRSP_HDR_SIZE	(sizeof(struct rxr_atomrsp_hdr))
-
-struct rxr_atomrsp_pkt {
-	struct rxr_atomrsp_hdr hdr;
-	char data[];
-};
-
 static inline struct rxr_atomrsp_hdr *rxr_get_atomrsp_hdr(void *pkt)
 {
 	return (struct rxr_atomrsp_hdr *)pkt;
 }
+
+#define RXR_ATOMRSP_OPT_CONNID_HDR BIT_ULL(0)
 
 /* receipt packet headers */
 struct rxr_receipt_hdr {

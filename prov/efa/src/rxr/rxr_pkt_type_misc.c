@@ -643,6 +643,8 @@ int rxr_pkt_init_atomrsp(struct rxr_ep *ep, struct rxr_rx_entry *rx_entry,
 			 struct rxr_pkt_entry *pkt_entry)
 {
 	struct rxr_atomrsp_hdr *atomrsp_hdr;
+	struct rdm_peer *peer;
+	size_t hdr_size;
 
 	assert(rx_entry->atomrsp_data);
 	pkt_entry->addr = rx_entry->addr;
@@ -656,11 +658,20 @@ int rxr_pkt_init_atomrsp(struct rxr_ep *ep, struct rxr_rx_entry *rx_entry,
 	atomrsp_hdr->rx_id = rx_entry->rx_id;
 	atomrsp_hdr->seg_size = ofi_total_iov_len(rx_entry->iov, rx_entry->iov_count);
 
-	assert(RXR_ATOMRSP_HDR_SIZE + atomrsp_hdr->seg_size < ep->mtu_size);
+	hdr_size = sizeof(struct rxr_atomrsp_hdr);
+	peer = rxr_ep_get_peer(ep, pkt_entry->addr);
+	assert(peer);
+	if (rxr_peer_need_connid(peer)) {
+		atomrsp_hdr->flags |= RXR_ATOMRSP_OPT_CONNID_HDR;
+		rxr_pkt_init_connid_hdr(ep, atomrsp_hdr->connid_hdr);
+		hdr_size += sizeof(struct rxr_opt_connid_hdr);
+	}
+
+	assert(hdr_size + atomrsp_hdr->seg_size < ep->mtu_size);
 
 	/* rx_entry->atomrsp_data was filled in rxr_pkt_handle_req_recv() */
-	memcpy((char*)pkt_entry->pkt + RXR_ATOMRSP_HDR_SIZE, rx_entry->atomrsp_data, atomrsp_hdr->seg_size);
-	pkt_entry->pkt_size = RXR_ATOMRSP_HDR_SIZE + atomrsp_hdr->seg_size;
+	memcpy((char*)pkt_entry->pkt + hdr_size, rx_entry->atomrsp_data, atomrsp_hdr->seg_size);
+	pkt_entry->pkt_size = hdr_size + atomrsp_hdr->seg_size;
 	return 0;
 }
 
@@ -681,17 +692,20 @@ void rxr_pkt_handle_atomrsp_send_completion(struct rxr_ep *ep, struct rxr_pkt_en
 void rxr_pkt_handle_atomrsp_recv(struct rxr_ep *ep,
 				 struct rxr_pkt_entry *pkt_entry)
 {
-	struct rxr_atomrsp_pkt *atomrsp_pkt = NULL;
 	struct rxr_atomrsp_hdr *atomrsp_hdr = NULL;
 	struct rxr_tx_entry *tx_entry = NULL;
+	size_t hdr_size;
 
-	atomrsp_pkt = (struct rxr_atomrsp_pkt *)pkt_entry->pkt;
-	atomrsp_hdr = &atomrsp_pkt->hdr;
+	atomrsp_hdr = rxr_get_atomrsp_hdr(pkt_entry->pkt);
+	hdr_size = sizeof(struct rxr_atomrsp_hdr);
+	if (atomrsp_hdr->flags & RXR_ATOMRSP_OPT_CONNID_HDR)
+		hdr_size += sizeof(struct rxr_opt_connid_hdr);
+
 	tx_entry = ofi_bufpool_get_ibuf(ep->tx_entry_pool, atomrsp_hdr->tx_id);
 
 	ofi_copy_to_iov(tx_entry->atomic_ex.resp_iov,
 			tx_entry->atomic_ex.resp_iov_count,
-			0, atomrsp_pkt->data,
+			0, pkt_entry->pkt + hdr_size,
 			atomrsp_hdr->seg_size);
 
 	if (tx_entry->fi_flags & FI_COMPLETION)
