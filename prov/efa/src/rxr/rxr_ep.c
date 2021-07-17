@@ -37,7 +37,7 @@
 #include "ofi.h"
 #include <ofi_util.h>
 #include <ofi_iov.h>
-
+#include <ofi_shm.h>
 #include "rxr.h"
 #include "efa.h"
 #include "rxr_msg.h"
@@ -874,7 +874,7 @@ static int rxr_ep_ctrl(struct fid *fid, int command, void *arg)
 	ssize_t ret;
 	struct rxr_ep *ep;
 	size_t shm_rx_size;
-	char shm_ep_name[NAME_MAX];
+	char shm_ep_name[SMR_NAME_MAX];
 
 	switch (command) {
 	case FI_ENABLE:
@@ -912,10 +912,9 @@ static int rxr_ep_ctrl(struct fid *fid, int command, void *arg)
 		 * shared memory region.
 		 */
 		if (ep->use_shm) {
-			ret = rxr_ep_efa_addr_to_str(ep->core_addr, shm_ep_name);
+			ret = rxr_raw_addr_to_smr_name(ep->core_addr, shm_ep_name);
 			if (ret < 0)
 				goto out;
-
 			fi_setname(&ep->shm_ep->fid, shm_ep_name, sizeof(shm_ep_name));
 			shm_rx_size = shm_info->rx_attr->size;
 			ret = fi_enable(ep->shm_ep);
